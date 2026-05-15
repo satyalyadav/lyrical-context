@@ -104,6 +104,130 @@ describe("ReferenceExplorer", () => {
 
     expect(screen.getByPlaceholderText("e.g. Drake Scorpion")).toBeVisible();
   });
+
+  it("keeps album track references collapsed until a track is opened", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              type: "album",
+              id: "1406109769",
+              title: "Scorpion",
+              artist: "Drake",
+              artworkUrl: null,
+              sourceUrl: "https://music.apple.com/album",
+              metadata: {
+                collectionId: 1406109769,
+                trackCount: 2,
+                releaseYear: "2018",
+              },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          album: {
+            type: "album",
+            id: "1406109769",
+            title: "Scorpion",
+            artist: "Drake",
+            artworkUrl: null,
+            sourceUrl: "https://music.apple.com/album",
+            metadata: {
+              collectionId: 1406109769,
+              trackCount: 2,
+              releaseYear: "2018",
+            },
+          },
+          tracks: [
+            {
+              track: {
+                id: "1",
+                title: "First Track",
+                artist: "Drake",
+                trackNumber: 1,
+                discNumber: 1,
+                explicitness: "explicit",
+              },
+              matchStatus: "matched",
+              matchConfidence: 1,
+              matchedSong: null,
+              references: [
+                {
+                  id: "ref-1",
+                  referentId: "referent-1",
+                  fragment: "A hidden line",
+                  annotation: "A hidden reference.",
+                  annotationHtml: null,
+                  sourceUrl: "https://genius.com/annotation",
+                  state: "accepted",
+                  classification: "accepted",
+                  verified: false,
+                  votesTotal: 4,
+                  categories: ["verified-accepted"],
+                },
+              ],
+              error: null,
+            },
+            {
+              track: {
+                id: "2",
+                title: "Second Track",
+                artist: "Drake",
+                trackNumber: 2,
+                discNumber: 1,
+                explicitness: "explicit",
+              },
+              matchStatus: "matched",
+              matchConfidence: 0.92,
+              matchedSong: null,
+              references: [
+                {
+                  id: "ref-2",
+                  referentId: "referent-2",
+                  fragment: "Another hidden line",
+                  annotation: "Another hidden reference.",
+                  annotationHtml: null,
+                  sourceUrl: "https://genius.com/annotation",
+                  state: "accepted",
+                  classification: "accepted",
+                  verified: false,
+                  votesTotal: 6,
+                  categories: ["verified-accepted"],
+                },
+              ],
+              error: null,
+            },
+          ],
+          source: "live",
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReferenceExplorer />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Album" }));
+    await userEvent.type(
+      screen.getByPlaceholderText("e.g. Drake Scorpion"),
+      "scorpion"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    await screen.findByText("Scorpion");
+    await userEvent.click(screen.getByRole("button", { name: /Scorpion/i }));
+
+    await screen.findByRole("button", { name: /First Track/i });
+    expect(screen.queryByText("A hidden line")).not.toBeInTheDocument();
+    expect(screen.queryByText("Another hidden line")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /First Track/i }));
+
+    expect(await screen.findByText("A hidden line")).toBeVisible();
+    expect(screen.queryByText("Another hidden line")).not.toBeInTheDocument();
+  });
 });
 
 function jsonResponse(body: unknown, status = 200) {

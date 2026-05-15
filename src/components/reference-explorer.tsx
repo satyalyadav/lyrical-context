@@ -7,6 +7,8 @@ import {
   AlertCircle,
   ArrowUpRight,
   BadgeCheck,
+  ChevronDown,
+  ChevronRight,
   Disc3,
   Loader2,
   Music2,
@@ -63,11 +65,11 @@ const FILTERS: Array<{
   label: string;
   icon: typeof Sparkles;
 }> = [
-  { value: "all", label: "All", icon: Sparkles },
+  { value: "verified-accepted", label: "Accepted", icon: BadgeCheck },
   { value: "diss", label: "Likely disses", icon: Target },
   { value: "names-places", label: "Names & places", icon: UserRoundSearch },
   { value: "sample-interpolation", label: "Samples", icon: Disc3 },
-  { value: "verified-accepted", label: "Accepted", icon: BadgeCheck },
+  { value: "all", label: "All", icon: Sparkles },
 ];
 
 export function ReferenceExplorer() {
@@ -508,7 +510,7 @@ function AlbumTrackList({
 
   return (
     <ScrollArea className="h-[500px] pr-3">
-      <div className="space-y-3">
+      <div className="space-y-2">
         {data.tracks.map((group) => {
           const references = filterReferences(group.references, filter);
 
@@ -517,38 +519,11 @@ function AlbumTrackList({
           }
 
           return (
-            <div
+            <AlbumTrackDisclosure
               key={group.track.id}
-              className="rounded-md border border-border/70 bg-background/35"
-            >
-              <div className="flex flex-col gap-2 border-b border-border/60 p-3 md:flex-row md:items-center md:justify-between">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="font-mono">
-                      {String(group.track.trackNumber || 0).padStart(2, "0")}
-                    </span>
-                    <span>{group.track.artist}</span>
-                  </div>
-                  <div className="mt-1 truncate text-sm font-medium">
-                    {group.track.title}
-                  </div>
-                </div>
-                <TrackStatus group={group} />
-              </div>
-              {references.length ? (
-                <div className="space-y-2 p-3">
-                  {references.map((reference) => (
-                    <ReferenceCard key={reference.id} reference={reference} />
-                  ))}
-                </div>
-              ) : (
-                <div className="p-3 text-sm text-muted-foreground">
-                  {group.matchStatus === "matched"
-                    ? "No Genius references yet."
-                    : group.error}
-                </div>
-              )}
-            </div>
+              group={group}
+              references={references}
+            />
           );
         })}
       </div>
@@ -556,22 +531,82 @@ function AlbumTrackList({
   );
 }
 
-function TrackStatus({
+function AlbumTrackDisclosure({
   group,
+  references,
 }: {
   group: AlbumReferenceResponse["tracks"][number];
+  references: Reference[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const panelId = `album-track-panel-${group.track.id}`;
+  const Icon = expanded ? ChevronDown : ChevronRight;
+
+  return (
+    <div className="overflow-hidden rounded-md border border-border/70 bg-background/35">
+      <button
+        aria-controls={panelId}
+        aria-expanded={expanded}
+        className={`flex w-full items-center gap-3 p-3 text-left transition ${
+          expanded ? "bg-muted/30" : "hover:bg-muted/20"
+        }`}
+        type="button"
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <Icon className="size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="font-mono">
+              {String(group.track.trackNumber || 0).padStart(2, "0")}
+            </span>
+            <span className="truncate">{group.track.artist}</span>
+          </div>
+          <div className="mt-1 truncate text-sm font-medium">
+            {group.track.title}
+          </div>
+        </div>
+        <TrackStatus group={group} referenceCount={references.length} />
+      </button>
+
+      {expanded ? (
+        <div id={panelId} className="border-t border-border/60 p-3">
+          {references.length ? (
+            <div className="grid gap-3 xl:grid-cols-2">
+              {references.map((reference) => (
+                <ReferenceCard key={reference.id} reference={reference} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed border-border/70 bg-background/30 p-4 text-sm text-muted-foreground">
+              {group.matchStatus === "matched"
+                ? "No Genius references yet."
+                : group.error}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TrackStatus({
+  group,
+  referenceCount,
+}: {
+  group: AlbumReferenceResponse["tracks"][number];
+  referenceCount: number;
 }) {
   if (group.matchStatus === "matched") {
     return (
-      <Badge variant="outline" className="rounded-md">
-        {group.references.length} refs
+      <Badge variant="outline" className="shrink-0 rounded-md">
+        {referenceCount} refs
         {group.matchConfidence ? ` · ${Math.round(group.matchConfidence * 100)}%` : ""}
       </Badge>
     );
   }
 
   return (
-    <Badge variant="destructive" className="rounded-md">
+    <Badge variant="destructive" className="shrink-0 rounded-md">
       {group.matchStatus}
     </Badge>
   );
