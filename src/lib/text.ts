@@ -1,3 +1,5 @@
+import sanitizeHtml from "sanitize-html";
+
 import type { ReferenceCategory } from "@/lib/types";
 
 const FEATURE_PATTERN =
@@ -38,6 +40,45 @@ const SAMPLE_TERMS = [
   "beat",
 ];
 
+const ANNOTATION_ALLOWED_TAGS = [
+  "a",
+  "b",
+  "blockquote",
+  "br",
+  "caption",
+  "cite",
+  "code",
+  "div",
+  "em",
+  "figcaption",
+  "figure",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "hr",
+  "i",
+  "img",
+  "li",
+  "ol",
+  "p",
+  "pre",
+  "s",
+  "small",
+  "span",
+  "strong",
+  "sub",
+  "sup",
+  "table",
+  "tbody",
+  "td",
+  "th",
+  "thead",
+  "tr",
+  "u",
+  "ul",
+];
+
 export function compactWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -54,6 +95,29 @@ export function stripHtml(value: string) {
       .replace(/&#39;/g, "'")
       .replace(/&nbsp;/g, " ")
   );
+}
+
+export function sanitizeAnnotationHtml(value: string) {
+  return sanitizeHtml(value, {
+    allowedTags: ANNOTATION_ALLOWED_TAGS,
+    allowedAttributes: {
+      a: ["href", "title", "target", "rel"],
+      img: ["alt", "height", "loading", "src", "title", "width"],
+    },
+    allowedSchemes: ["http", "https", "mailto"],
+    allowedSchemesByTag: {
+      img: ["http", "https"],
+    },
+    transformTags: {
+      a: sanitizeHtml.simpleTransform("a", {
+        rel: "noopener noreferrer",
+        target: "_blank",
+      }),
+      img: sanitizeHtml.simpleTransform("img", {
+        loading: "lazy",
+      }),
+    },
+  }).trim();
 }
 
 export function truncateText(value: string, maxLength: number) {

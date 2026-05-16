@@ -47,4 +47,32 @@ describe("Genius normalizers", () => {
       categories: ["names-places", "verified-accepted"],
     });
   });
+
+  it("preserves safe annotation images and strips scripts", () => {
+    const references = normalizeReferent({
+      id: 100,
+      fragment: "I been running the game",
+      classification: "accepted",
+      annotations: [
+        {
+          id: 2,
+          state: "accepted",
+          body: {
+            plain: "Drake injury context.",
+            html: `
+              <p>Drake injury context.</p>
+              <script>alert("bad")</script>
+              <img src="https://images.genius.com/drake.jpg" alt="Drake training">
+            `,
+          },
+        },
+      ],
+    });
+
+    expect(references[0].annotationHtml).toContain(
+      'src="https://images.genius.com/drake.jpg"'
+    );
+    expect(references[0].annotationHtml).toContain('loading="lazy"');
+    expect(references[0].annotationHtml).not.toContain("<script");
+  });
 });

@@ -653,9 +653,7 @@ function ReferenceCard({ reference }: { reference: Reference }) {
       <blockquote className="mt-3 border-l-2 border-primary/70 pl-3 text-sm leading-6 text-foreground">
         {reference.fragment}
       </blockquote>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        {reference.annotation}
-      </p>
+      <AnnotationBody reference={reference} />
       <div className="mt-4 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {reference.verified ? <BadgeCheck className="size-3.5 text-primary" /> : null}
@@ -678,6 +676,23 @@ function ReferenceCard({ reference }: { reference: Reference }) {
         </Button>
       </div>
     </article>
+  );
+}
+
+function AnnotationBody({ reference }: { reference: Reference }) {
+  if (reference.annotationHtml) {
+    return (
+      <div
+        className="mt-3 text-sm leading-6 text-muted-foreground [&_a]:text-foreground [&_a]:underline [&_a]:decoration-primary/70 [&_a]:underline-offset-4 [&_a:hover]:text-primary [&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-primary/70 [&_blockquote]:pl-3 [&_blockquote]:text-foreground [&_figcaption]:mt-2 [&_figcaption]:text-center [&_figcaption]:text-xs [&_figcaption]:text-muted-foreground [&_figure]:my-4 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_img]:mx-auto [&_img]:my-4 [&_img]:max-h-[420px] [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-border/70 [&_img]:object-contain [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_table]:my-4 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-border/70 [&_td]:p-2 [&_th]:border [&_th]:border-border/70 [&_th]:p-2 [&_ul]:list-disc"
+        dangerouslySetInnerHTML={{ __html: reference.annotationHtml }}
+      />
+    );
+  }
+
+  return (
+    <p className="mt-3 text-sm leading-6 text-muted-foreground">
+      {reference.annotation}
+    </p>
   );
 }
 

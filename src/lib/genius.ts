@@ -4,6 +4,7 @@ import { LyricalContextError } from "@/lib/errors";
 import { withJsonCache } from "@/lib/cache";
 import {
   detectReferenceCategories,
+  sanitizeAnnotationHtml,
   stripHtml,
   truncateText,
 } from "@/lib/text";
@@ -12,6 +13,7 @@ import type { Reference, SongSearchResult } from "@/lib/types";
 const GENIUS_API_BASE = "https://api.genius.com";
 const SEARCH_TTL_SECONDS = 60 * 60 * 24;
 const REFERENCES_TTL_SECONDS = 60 * 30;
+const REFERENCES_CACHE_VERSION = 2;
 const MAX_REFERENT_PAGES = 6;
 const REFERENTS_PER_PAGE = 50;
 
@@ -81,7 +83,7 @@ export async function searchGeniusSongs(query: string, limit = 12) {
 }
 
 export async function getGeniusSongReferences(songId: string) {
-  const key = `genius:references:${songId}`;
+  const key = `genius:references:v${REFERENCES_CACHE_VERSION}:${songId}`;
 
   return withJsonCache(key, REFERENCES_TTL_SECONDS, async () => {
     const references: Reference[] = [];
@@ -142,7 +144,9 @@ export function normalizeReferent(referent: GeniusReferent): Reference[] {
         referentId: String(referent.id),
         fragment,
         annotation: annotationText,
-        annotationHtml: annotation.body?.html ?? null,
+        annotationHtml: annotation.body?.html
+          ? sanitizeAnnotationHtml(annotation.body.html)
+          : null,
         sourceUrl: annotation.url ?? referent.url ?? "https://genius.com",
         state,
         classification,
