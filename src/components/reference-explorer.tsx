@@ -14,25 +14,12 @@ import {
   Music2,
   Search,
   Sparkles,
-  Tags,
   Target,
   UserRoundSearch,
 } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import type {
   AlbumReferenceResponse,
   ApiErrorBody,
@@ -176,152 +163,107 @@ export function ReferenceExplorer() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,oklch(0.2_0.04_250),transparent_34rem),linear-gradient(180deg,oklch(0.14_0.02_250),oklch(0.1_0.015_250))] px-4 py-5 text-foreground md:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5">
-        <header className="flex flex-col gap-4 rounded-md border border-border/70 bg-background/70 p-4 backdrop-blur md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                <Tags className="size-4" />
-              </div>
-              <span className="text-sm font-medium text-primary">
-                Lyrical Context
-              </span>
+    <main className="min-h-screen bg-[#fbf9f4] text-[#1b1c19] lg:flex lg:h-screen lg:overflow-hidden">
+      <aside className="border-b border-[#c8c7bf] bg-[#f5f3ee] lg:flex lg:h-screen lg:w-80 lg:shrink-0 lg:flex-col lg:border-b-0 lg:border-r">
+        <div className="border-b border-[#c8c7bf] px-6 py-6">
+          <h1 className="mb-5 [font-family:var(--font-newsreader)] text-3xl font-medium italic tracking-tight text-[#181916]">
+            Lyrical Context
+          </h1>
+
+          <form className="space-y-3" onSubmit={submitSearch}>
+            <div className="flex rounded border border-[#c8c7bf] bg-[#e4e2dd] p-1">
+              <TypeButton
+                active={searchType === "song"}
+                icon={Music2}
+                label="Song"
+                onClick={() => setSearchType("song")}
+              />
+              <TypeButton
+                active={searchType === "album"}
+                icon={Album}
+                label="Album"
+                onClick={() => setSearchType("album")}
+              />
             </div>
-            <h1 className="text-2xl font-semibold tracking-normal text-foreground md:text-3xl">
-              Search references, not full lyrics.
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Pick a song or album and review Genius annotations in one readable
-              workspace, grouped by track when needed.
-            </p>
+
+            <div className="flex gap-2">
+              <label className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#777770]" />
+                <input
+                  className="h-10 w-full rounded-t border-0 border-b border-[#777770] bg-[#f0eee9] pl-9 pr-3 text-sm text-[#1b1c19] outline-none transition focus:border-[#181916] focus:ring-0"
+                  placeholder={
+                    searchType === "song"
+                      ? "e.g. Drake God's Plan"
+                      : "e.g. Drake Scorpion"
+                  }
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </label>
+              <button
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-[#181916] text-white transition hover:bg-[#2d2d2a] disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={searching}
+                type="submit"
+              >
+                {searching ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Search className="size-4" />
+                )}
+                <span className="sr-only">Search</span>
+              </button>
+            </div>
+          </form>
+
+          {error ? <InlineError message={error} /> : null}
+        </div>
+
+        <div className="px-3 py-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#777770]">
+            {query.trim() ? `Results for "${query.trim()}"` : "Results"}
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center md:min-w-72">
-            <Metric label="Source" value="Genius" />
-            <Metric label="Lyrics" value="Hidden" />
-            <Metric label="Albums" value="iTunes" />
-          </div>
-        </header>
-
-        <section className="grid gap-5 lg:grid-cols-[390px_1fr]">
-          <Card className="rounded-md border-border/70 bg-card/80">
-            <CardHeader>
-              <CardTitle>Search</CardTitle>
-              <CardDescription>
-                Find one song or an album tracklist, then load every available
-                annotation.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <form className="space-y-3" onSubmit={submitSearch}>
-                <div className="grid grid-cols-2 gap-2">
-                  <TypeButton
-                    active={searchType === "song"}
-                    icon={Music2}
-                    label="Song"
-                    onClick={() => setSearchType("song")}
-                  />
-                  <TypeButton
-                    active={searchType === "album"}
-                    icon={Album}
-                    label="Album"
-                    onClick={() => setSearchType("album")}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    className="h-10 rounded-md"
-                    placeholder={
-                      searchType === "song"
-                        ? "e.g. Drake God's Plan"
-                        : "e.g. Drake Scorpion"
-                    }
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                  />
-                  <Button
-                    className="h-10 rounded-md px-3"
-                    disabled={searching}
-                    type="submit"
-                  >
-                    {searching ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Search className="size-4" />
-                    )}
-                    <span className="sr-only">Search</span>
-                  </Button>
-                </div>
-              </form>
-
-              {error ? <InlineError message={error} /> : null}
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-medium text-muted-foreground">
-                  Results
-                </h2>
-                <Badge variant="outline" className="rounded-md">
-                  {results.length}
-                </Badge>
-              </div>
-
-              <ScrollArea className="h-[390px] pr-3">
-                <div className="space-y-2">
-                  {searching ? (
-                    Array.from({ length: 6 }).map((_, index) => (
-                      <ResultSkeleton key={index} />
-                    ))
-                  ) : results.length > 0 ? (
-                    results.map((result) => (
-                      <SearchResultButton
-                        key={`${result.type}-${result.id}`}
-                        active={selectedId === result.id}
-                        result={result}
-                        onClick={() => openResult(result)}
-                      />
-                    ))
-                  ) : (
-                    <EmptyPanel
-                      title="No search yet"
-                      body="Search for a song or album to begin."
-                    />
-                  )}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-
-          <Card className="min-h-[650px] rounded-md border-border/70 bg-card/80">
-            {detail.type === "idle" ? (
-              <WorkspaceEmpty />
-            ) : detail.type === "loading" ? (
-              <WorkspaceLoading result={detail.result} message={loadingMessage} />
-            ) : detail.type === "error" ? (
-              <WorkspaceError result={detail.result} message={detail.message} />
+          <div className="space-y-1">
+            {searching ? (
+              Array.from({ length: 6 }).map((_, index) => (
+                <ResultSkeleton key={index} />
+              ))
+            ) : results.length > 0 ? (
+              results.map((result) => (
+                <SearchResultButton
+                  key={`${result.type}-${result.id}`}
+                  active={selectedId === result.id}
+                  result={result}
+                  onClick={() => openResult(result)}
+                />
+              ))
             ) : (
-              <ReferenceWorkspace
-                detail={detail}
-                filter={filter}
-                filterCounts={filterCounts}
-                filteredReferences={filteredReferences}
-                onFilterChange={setFilter}
+              <EmptyPanel
+                title="No search yet"
+                body="Search for a song or album to begin."
               />
             )}
-          </Card>
-        </section>
-      </div>
-    </main>
-  );
-}
+          </div>
+        </div>
+      </aside>
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-border/60 bg-muted/40 p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-sm font-semibold">{value}</div>
-    </div>
+      <section className="min-w-0 flex-1 lg:h-screen lg:overflow-y-auto">
+        {detail.type === "idle" ? (
+          <WorkspaceEmpty />
+        ) : detail.type === "loading" ? (
+          <WorkspaceLoading result={detail.result} message={loadingMessage} />
+        ) : detail.type === "error" ? (
+          <WorkspaceError result={detail.result} message={detail.message} />
+        ) : (
+          <ReferenceWorkspace
+            detail={detail}
+            filter={filter}
+            filterCounts={filterCounts}
+            filteredReferences={filteredReferences}
+            onFilterChange={setFilter}
+          />
+        )}
+      </section>
+    </main>
   );
 }
 
@@ -337,15 +279,18 @@ function TypeButton({
   onClick: () => void;
 }) {
   return (
-    <Button
-      className="h-10 rounded-md"
+    <button
+      className={`flex h-8 flex-1 items-center justify-center gap-2 rounded px-3 text-sm font-medium transition ${
+        active
+          ? "bg-[#fbf9f4] text-[#181916] shadow-sm"
+          : "text-[#474741] hover:text-[#181916]"
+      }`}
       type="button"
-      variant={active ? "default" : "outline"}
       onClick={onClick}
     >
-      <Icon className="size-4" />
+      <Icon className="size-3.5" />
       {label}
-    </Button>
+    </button>
   );
 }
 
@@ -358,32 +303,36 @@ function SearchResultButton({
   result: SearchResult;
   onClick: () => void;
 }) {
+  const year = result.type === "album" ? result.metadata.releaseYear : null;
+
   return (
     <button
-      className={`flex w-full gap-3 rounded-md border p-3 text-left transition ${
+      className={`group flex w-full items-center gap-3 rounded p-3 text-left transition ${
         active
-          ? "border-primary bg-primary/10"
-          : "border-border/60 bg-background/40 hover:border-primary/60 hover:bg-muted/40"
+          ? "bg-[#eae8e3] text-[#181916]"
+          : "hover:bg-[#e4e2dd] text-[#1b1c19]"
       }`}
       type="button"
       onClick={onClick}
     >
       <Artwork url={result.artworkUrl} title={result.title} size="md" />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="rounded-md">
-            {result.type}
-          </Badge>
-          {result.type === "album" && result.metadata.releaseYear ? (
-            <span className="text-xs text-muted-foreground">
-              {result.metadata.releaseYear}
-            </span>
-          ) : null}
+        <div className="truncate text-sm font-semibold leading-5">
+          {result.title}
         </div>
-        <div className="mt-2 truncate text-sm font-medium">{result.title}</div>
-        <div className="truncate text-xs text-muted-foreground">
+        <div className="truncate text-xs leading-5 text-[#777770]">
           {result.artist}
         </div>
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <span
+          className={`rounded border border-[#c8c7bf] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] ${
+            active ? "bg-[#fbf9f4]" : "text-[#777770]"
+          }`}
+        >
+          {result.type}
+        </span>
+        {year ? <span className="text-[11px] text-[#777770]">{year}</span> : null}
       </div>
     </button>
   );
@@ -414,78 +363,91 @@ function ReferenceWorkspace({
     detail.type === "album"
       ? detail.data.tracks.filter((track) => track.matchStatus !== "matched").length
       : 0;
+  const year = result.type === "album" ? result.metadata.releaseYear : null;
 
   return (
-    <div className="flex h-full flex-col">
-      <CardHeader className="border-b border-border/70">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div className="flex min-w-0 gap-4">
-            <Artwork url={result.artworkUrl} title={result.title} size="lg" />
-            <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Badge variant="default" className="rounded-md">
-                  {result.type === "song" ? "Song" : "Album"}
-                </Badge>
-                <Badge variant="outline" className="rounded-md">
-                  {totalReferences} references
-                </Badge>
-                {unmatchedTracks ? (
-                  <Badge variant="destructive" className="rounded-md">
-                    {unmatchedTracks} track issues
-                  </Badge>
-                ) : null}
-              </div>
-              <CardTitle className="truncate text-xl md:text-2xl">
-                {result.title}
-              </CardTitle>
-              <CardDescription className="mt-1">{result.artist}</CardDescription>
+    <div>
+      <header className="sticky top-0 z-20 border-b border-[#c8c7bf]/70 bg-[#fbf9f4]/95 px-6 py-8 backdrop-blur">
+        <div className="mx-auto flex max-w-[680px] items-end gap-6">
+          <Artwork url={result.artworkUrl} title={result.title} size="lg" />
+          <div className="min-w-0 flex-1 pb-1">
+            <h2 className="[font-family:var(--font-newsreader)] text-4xl font-semibold leading-tight tracking-[-0.02em] text-[#181916] md:text-5xl">
+              {result.title}
+            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[#777770]">
+              <span>{result.artist}</span>
+              {year ? (
+                <>
+                  <span className="size-1 rounded-full bg-[#c8c7bf]" />
+                  <span>{year}</span>
+                </>
+              ) : null}
+              <a
+                className="ml-auto inline-flex items-center gap-1 rounded border border-[#c8c7bf] px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#474741] transition hover:border-[#181916] hover:text-[#181916]"
+                href={result.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Source
+                <ArrowUpRight className="size-3.5" />
+              </a>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#ffca98]/30 px-3 py-1 text-xs font-semibold text-[#7a532a]">
+                <Sparkles className="size-3.5" />
+                {totalReferences} references
+              </span>
+              <span className="rounded border border-[#c8c7bf] px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#777770]">
+                Source: Genius
+              </span>
+              {unmatchedTracks ? (
+                <span className="rounded border border-[#ba1a1a]/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#ba1a1a]">
+                  {unmatchedTracks} track issues
+                </span>
+              ) : null}
             </div>
           </div>
-          <Button
-            className="w-fit rounded-md"
-            nativeButton={false}
-            variant="outline"
-            render={<a href={result.sourceUrl} target="_blank" rel="noreferrer" />}
-          >
-            Source
-            <ArrowUpRight className="size-4" />
-          </Button>
         </div>
-      </CardHeader>
 
-      <CardContent className="flex flex-1 flex-col gap-4 py-4">
-        <div className="flex flex-wrap gap-2">
+        <div className="mx-auto mt-6 flex max-w-[680px] gap-2 overflow-x-auto pb-1">
           {FILTERS.map((item) => {
             const Icon = item.icon;
+            const active = filter === item.value;
             return (
-              <Button
+              <button
                 key={item.value}
-                className="rounded-md"
-                size="sm"
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  active
+                    ? "border-[#181916] bg-[#181916] text-white"
+                    : "border-[#c8c7bf] bg-[#f0eee9] text-[#474741] hover:bg-[#e4e2dd] hover:text-[#181916]"
+                }`}
                 type="button"
-                variant={filter === item.value ? "default" : "outline"}
                 onClick={() => onFilterChange(item.value)}
               >
                 <Icon className="size-3.5" />
                 {item.label}
-                <span className="font-mono text-xs opacity-70">
+                <span className="font-mono text-[11px] opacity-70">
                   {filterCounts[item.value] ?? 0}
                 </span>
-              </Button>
+              </button>
             );
           })}
         </div>
+      </header>
 
-        {detail.type === "song" ? (
-          <ReferenceList references={filteredReferences} />
-        ) : (
-          <AlbumTrackList
-            data={detail.data}
-            filter={filter}
-            filteredReferences={filteredReferences}
-          />
-        )}
-      </CardContent>
+      <div className="px-6 py-6">
+        <div className="mx-auto max-w-[680px]">
+          {detail.type === "song" ? (
+            <ReferenceList references={filteredReferences} />
+          ) : (
+            <AlbumTrackList
+              data={detail.data}
+              filter={filter}
+              filteredReferences={filteredReferences}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -509,25 +471,23 @@ function AlbumTrackList({
   }
 
   return (
-    <ScrollArea className="h-[500px] pr-3">
-      <div className="space-y-2">
-        {data.tracks.map((group) => {
-          const references = filterReferences(group.references, filter);
+    <div className="space-y-0">
+      {data.tracks.map((group) => {
+        const references = filterReferences(group.references, filter);
 
-          if (filter !== "all" && references.length === 0) {
-            return null;
-          }
+        if (filter !== "all" && references.length === 0) {
+          return null;
+        }
 
-          return (
-            <AlbumTrackDisclosure
-              key={group.track.id}
-              group={group}
-              references={references}
-            />
-          );
-        })}
-      </div>
-    </ScrollArea>
+        return (
+          <AlbumTrackDisclosure
+            key={group.track.id}
+            group={group}
+            references={references}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -543,43 +503,42 @@ function AlbumTrackDisclosure({
   const Icon = expanded ? ChevronDown : ChevronRight;
 
   return (
-    <div className="overflow-hidden rounded-md border border-border/70 bg-background/35">
+    <div className="border-b border-[#c8c7bf]/70 py-4">
       <button
         aria-controls={panelId}
         aria-expanded={expanded}
-        className={`flex w-full items-center gap-3 p-3 text-left transition ${
-          expanded ? "bg-muted/30" : "hover:bg-muted/20"
-        }`}
+        className="group flex w-full items-center gap-4 text-left"
         type="button"
         onClick={() => setExpanded((current) => !current)}
       >
-        <Icon className="size-4 shrink-0 text-muted-foreground" />
+        <span className="w-5 shrink-0 text-right font-mono text-xs text-[#777770]">
+          {group.track.trackNumber || 0}
+        </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="font-mono">
-              {String(group.track.trackNumber || 0).padStart(2, "0")}
-            </span>
-            <span className="truncate">{group.track.artist}</span>
-          </div>
-          <div className="mt-1 truncate text-sm font-medium">
+          <h3 className="[font-family:var(--font-newsreader)] text-2xl font-medium leading-8 text-[#181916] transition group-hover:text-[#7d562d]">
             {group.track.title}
+          </h3>
+          <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[#777770]">
+            {group.track.artist}
           </div>
         </div>
         <TrackStatus group={group} referenceCount={references.length} />
+        <Icon className="size-4 shrink-0 text-[#777770]" />
       </button>
 
       {expanded ? (
-        <div id={panelId} className="border-t border-border/60 p-3">
+        <div
+          id={panelId}
+          className="ml-7 mt-4 space-y-4 border-l-2 border-[#7d562d]/25 pl-5"
+        >
           {references.length ? (
-            <div className="grid gap-3 xl:grid-cols-2">
-              {references.map((reference) => (
-                <ReferenceCard key={reference.id} reference={reference} />
-              ))}
-            </div>
+            references.map((reference) => (
+              <ReferenceCard key={reference.id} reference={reference} />
+            ))
           ) : (
-            <div className="rounded-md border border-dashed border-border/70 bg-background/30 p-4 text-sm text-muted-foreground">
+            <div className="rounded border border-dashed border-[#c8c7bf] bg-[#f5f3ee] p-4 text-sm text-[#777770]">
               {group.matchStatus === "matched"
-                ? "No Genius references yet."
+                ? "No references yet."
                 : group.error}
             </div>
           )}
@@ -598,17 +557,16 @@ function TrackStatus({
 }) {
   if (group.matchStatus === "matched") {
     return (
-      <Badge variant="outline" className="shrink-0 rounded-md">
+      <span className="shrink-0 rounded-full bg-[#ffca98]/25 px-2 py-1 text-xs font-semibold text-[#7a532a]">
         {referenceCount} refs
-        {group.matchConfidence ? ` · ${Math.round(group.matchConfidence * 100)}%` : ""}
-      </Badge>
+      </span>
     );
   }
 
   return (
-    <Badge variant="destructive" className="shrink-0 rounded-md">
+    <span className="shrink-0 rounded-full bg-[#ffdad6] px-2 py-1 text-xs font-semibold text-[#93000a]">
       {group.matchStatus}
-    </Badge>
+    </span>
   );
 }
 
@@ -623,57 +581,56 @@ function ReferenceList({ references }: { references: Reference[] }) {
   }
 
   return (
-    <ScrollArea className="h-[500px] pr-3">
-      <div className="grid gap-3 xl:grid-cols-2">
-        {references.map((reference) => (
-          <ReferenceCard key={reference.id} reference={reference} />
-        ))}
-      </div>
-    </ScrollArea>
+    <div className="space-y-4">
+      {references.map((reference) => (
+        <ReferenceCard key={reference.id} reference={reference} />
+      ))}
+    </div>
   );
 }
 
 function ReferenceCard({ reference }: { reference: Reference }) {
   return (
-    <article className="rounded-md border border-border/70 bg-background/45 p-4">
-      <div className="flex flex-wrap gap-2">
-        {reference.categories.length ? (
-          reference.categories.map((category) => (
-            <Badge key={category} variant="secondary" className="rounded-md">
-              {categoryLabel(category)}
-            </Badge>
-          ))
-        ) : (
-          <Badge variant="outline" className="rounded-md">
-            reference
-          </Badge>
-        )}
+    <article className="relative overflow-hidden rounded border border-[#c8c7bf]/70 bg-white p-5 shadow-[0_4px_24px_rgba(0,0,0,0.03)]">
+      <div className="absolute bottom-0 left-0 top-0 w-1 bg-[#7d562d]" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          {reference.categories.length ? (
+            reference.categories.map((category) => (
+              <span
+                key={category}
+                className="inline-flex items-center rounded border border-[#c8c7bf] bg-[#f0eee9] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#474741]"
+              >
+                {categoryLabel(category)}
+              </span>
+            ))
+          ) : (
+            <span className="inline-flex items-center rounded border border-[#c8c7bf] bg-[#f0eee9] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#474741]">
+              reference
+            </span>
+          )}
+        </div>
+        <a
+          className="inline-flex items-center gap-1 text-xs font-semibold text-[#777770] transition hover:text-[#181916]"
+          href={reference.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Source
+          <ArrowUpRight className="size-3.5" />
+        </a>
       </div>
 
-      <blockquote className="mt-3 border-l-2 border-primary/70 pl-3 text-sm leading-6 text-foreground">
+      <blockquote className="mt-4 border-l-2 border-[#c8c7bf] pl-4 [font-family:var(--font-literata)] text-base italic leading-7 text-[#181916]">
         {reference.fragment}
       </blockquote>
       <AnnotationBody reference={reference} />
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {reference.verified ? <BadgeCheck className="size-3.5 text-primary" /> : null}
-          <span>{reference.state ?? reference.classification ?? "Genius"}</span>
-          {typeof reference.votesTotal === "number" ? (
-            <span className="font-mono">{reference.votesTotal} votes</span>
-          ) : null}
-        </div>
-        <Button
-          className="rounded-md"
-          nativeButton={false}
-          size="sm"
-          variant="ghost"
-          render={
-            <a href={reference.sourceUrl} target="_blank" rel="noreferrer" />
-          }
-        >
-          Open
-          <ArrowUpRight className="size-3.5" />
-        </Button>
+      <div className="mt-4 flex items-center gap-3 border-t border-[#c8c7bf]/70 pt-3 text-xs font-medium text-[#777770]">
+        {reference.verified ? <BadgeCheck className="size-3.5 text-[#7d562d]" /> : null}
+        <span>{reference.state ?? reference.classification ?? "Genius"}</span>
+        {typeof reference.votesTotal === "number" ? (
+          <span>{reference.votesTotal} votes</span>
+        ) : null}
       </div>
     </article>
   );
@@ -683,14 +640,14 @@ function AnnotationBody({ reference }: { reference: Reference }) {
   if (reference.annotationHtml) {
     return (
       <div
-        className="mt-3 text-sm leading-6 text-muted-foreground [&_a]:text-foreground [&_a]:underline [&_a]:decoration-primary/70 [&_a]:underline-offset-4 [&_a:hover]:text-primary [&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-primary/70 [&_blockquote]:pl-3 [&_blockquote]:text-foreground [&_figcaption]:mt-2 [&_figcaption]:text-center [&_figcaption]:text-xs [&_figcaption]:text-muted-foreground [&_figure]:my-4 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_img]:mx-auto [&_img]:my-4 [&_img]:max-h-[420px] [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-border/70 [&_img]:object-contain [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_table]:my-4 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-border/70 [&_td]:p-2 [&_th]:border [&_th]:border-border/70 [&_th]:p-2 [&_ul]:list-disc"
+        className="mt-4 [font-family:var(--font-literata)] text-[15px] leading-7 text-[#474741] [&_a]:text-[#181916] [&_a]:underline [&_a]:decoration-[#7d562d]/70 [&_a]:underline-offset-4 [&_a:hover]:text-[#7d562d] [&_blockquote]:my-4 [&_blockquote]:border-l-2 [&_blockquote]:border-[#c8c7bf] [&_blockquote]:pl-4 [&_blockquote]:text-[#181916] [&_figcaption]:mt-2 [&_figcaption]:text-center [&_figcaption]:text-xs [&_figcaption]:text-[#777770] [&_figure]:my-4 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_img]:mx-auto [&_img]:my-4 [&_img]:max-h-[420px] [&_img]:max-w-full [&_img]:rounded [&_img]:border [&_img]:border-[#c8c7bf]/70 [&_img]:object-contain [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_table]:my-4 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-[#c8c7bf] [&_td]:p-2 [&_th]:border [&_th]:border-[#c8c7bf] [&_th]:p-2 [&_ul]:list-disc"
         dangerouslySetInnerHTML={{ __html: reference.annotationHtml }}
       />
     );
   }
 
   return (
-    <p className="mt-3 text-sm leading-6 text-muted-foreground">
+    <p className="mt-4 [font-family:var(--font-literata)] text-[15px] leading-7 text-[#474741]">
       {reference.annotation}
     </p>
   );
@@ -698,15 +655,17 @@ function AnnotationBody({ reference }: { reference: Reference }) {
 
 function WorkspaceEmpty() {
   return (
-    <div className="flex min-h-[650px] items-center justify-center p-6">
+    <div className="flex min-h-[60vh] items-center justify-center px-6 py-16 lg:h-screen">
       <div className="max-w-md text-center">
-        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-md border border-border bg-muted/50">
-          <Search className="size-5 text-primary" />
+        <div className="mx-auto mb-5 flex size-12 items-center justify-center rounded border border-[#c8c7bf] bg-[#f0eee9]">
+          <Search className="size-5 text-[#7d562d]" />
         </div>
-        <h2 className="text-lg font-semibold">Choose a search result</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          The reference workspace will show annotated fragments, context, source
-          links, filter chips, and album track grouping.
+        <h2 className="[font-family:var(--font-newsreader)] text-3xl font-medium text-[#181916]">
+          Choose a search result
+        </h2>
+        <p className="mt-3 text-sm leading-6 text-[#777770]">
+          The reference workspace will show annotated fragments, Genius context,
+          source links, filters, and album track grouping.
         </p>
       </div>
     </div>
@@ -721,13 +680,13 @@ function WorkspaceLoading({
   message: string;
 }) {
   return (
-    <div className="flex min-h-[650px] items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-md border border-border bg-background/40 p-5">
+    <div className="flex min-h-[60vh] items-center justify-center px-6 py-16 lg:h-screen">
+      <div className="w-full max-w-md rounded border border-[#c8c7bf] bg-white p-5">
         <div className="flex items-center gap-3">
-          <Loader2 className="size-5 animate-spin text-primary" />
+          <Loader2 className="size-5 animate-spin text-[#7d562d]" />
           <div>
-            <h2 className="font-medium">{result.title}</h2>
-            <p className="text-sm text-muted-foreground">{message}</p>
+            <h2 className="font-semibold text-[#181916]">{result.title}</h2>
+            <p className="text-sm text-[#777770]">{message}</p>
           </div>
         </div>
         <Progress className="mt-5" value={66} />
@@ -744,15 +703,13 @@ function WorkspaceError({
   message: string;
 }) {
   return (
-    <div className="flex min-h-[650px] items-center justify-center p-6">
-      <div className="max-w-md rounded-md border border-destructive/40 bg-destructive/10 p-5">
+    <div className="flex min-h-[60vh] items-center justify-center px-6 py-16 lg:h-screen">
+      <div className="max-w-md rounded border border-[#ba1a1a]/30 bg-[#ffdad6]/40 p-5">
         <div className="flex items-start gap-3">
-          <AlertCircle className="mt-0.5 size-5 text-destructive" />
+          <AlertCircle className="mt-0.5 size-5 text-[#ba1a1a]" />
           <div>
-            <h2 className="font-medium">Could not load {result.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              {message}
-            </p>
+            <h2 className="font-semibold text-[#181916]">Could not load {result.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-[#777770]">{message}</p>
           </div>
         </div>
       </div>
@@ -762,16 +719,16 @@ function WorkspaceError({
 
 function EmptyPanel({ title, body }: { title: string; body: string }) {
   return (
-    <div className="rounded-md border border-dashed border-border/80 bg-background/30 p-6 text-center">
-      <div className="text-sm font-medium">{title}</div>
-      <div className="mt-1 text-sm text-muted-foreground">{body}</div>
+    <div className="rounded border border-dashed border-[#c8c7bf] bg-[#f5f3ee] p-5 text-center">
+      <div className="text-sm font-semibold text-[#181916]">{title}</div>
+      <div className="mt-1 text-sm text-[#777770]">{body}</div>
     </div>
   );
 }
 
 function InlineError({ message }: { message: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+    <div className="mt-3 flex items-start gap-2 rounded border border-[#ba1a1a]/30 bg-[#ffdad6]/40 p-3 text-sm text-[#93000a]">
       <AlertCircle className="mt-0.5 size-4" />
       <span>{message}</span>
     </div>
@@ -780,12 +737,11 @@ function InlineError({ message }: { message: string }) {
 
 function ResultSkeleton() {
   return (
-    <div className="flex gap-3 rounded-md border border-border/60 bg-background/40 p-3">
-      <div className="size-14 animate-pulse rounded-md bg-muted" />
+    <div className="flex gap-3 rounded p-3">
+      <div className="size-12 animate-pulse rounded bg-[#e4e2dd]" />
       <div className="flex-1 space-y-2">
-        <div className="h-4 w-16 animate-pulse rounded bg-muted" />
-        <div className="h-4 w-4/5 animate-pulse rounded bg-muted" />
-        <div className="h-3 w-2/5 animate-pulse rounded bg-muted" />
+        <div className="h-4 w-2/3 animate-pulse rounded bg-[#e4e2dd]" />
+        <div className="h-3 w-1/3 animate-pulse rounded bg-[#e4e2dd]" />
       </div>
     </div>
   );
@@ -802,8 +758,8 @@ function Artwork({
 }) {
   const className =
     size === "lg"
-      ? "size-20 rounded-md object-cover"
-      : "size-14 rounded-md object-cover";
+      ? "size-28 rounded object-cover shadow-sm md:size-32"
+      : "size-12 rounded object-cover";
 
   if (url) {
     return <img alt="" className={className} src={url} />;
@@ -812,7 +768,7 @@ function Artwork({
   return (
     <div
       aria-label={`${title} artwork placeholder`}
-      className={`${className} flex items-center justify-center border border-border bg-muted text-muted-foreground`}
+      className={`${className} flex items-center justify-center border border-[#c8c7bf] bg-[#e4e2dd] text-[#777770]`}
     >
       <Music2 className="size-5" />
     </div>
