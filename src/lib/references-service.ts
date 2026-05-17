@@ -49,7 +49,10 @@ export async function getSongReferenceResponse(
     sourceUrl?: string | null;
   }
 ): Promise<SongReferenceResponse> {
-  const { value: references, source } = await getGeniusSongReferences(songId);
+  const { value: references, source } = await getGeniusSongReferences(songId, {
+    title: fallback?.title,
+    artist: fallback?.artist,
+  });
 
   return {
     song: {
@@ -98,7 +101,10 @@ export async function getAlbumReferenceResponse(
         } satisfies TrackReferenceGroup;
       }
 
-      const { value: references } = await getGeniusSongReferences(match.song.id);
+      const { value: references } = await getGeniusSongReferences(match.song.id, {
+        title: match.song.title,
+        artist: match.song.artist,
+      });
 
       return {
         track,

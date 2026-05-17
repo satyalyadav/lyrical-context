@@ -1122,17 +1122,33 @@ function Artwork({
 }
 
 function filterReferences(references: Reference[], filter: ReferenceFilter) {
+  const sortBySongOrder = (filtered: Reference[]) =>
+    [...filtered].sort((first, second) => {
+      const firstIndex = Number.isFinite(first.sortIndex)
+        ? first.sortIndex
+        : Number.MAX_SAFE_INTEGER;
+      const secondIndex = Number.isFinite(second.sortIndex)
+        ? second.sortIndex
+        : Number.MAX_SAFE_INTEGER;
+
+      return firstIndex - secondIndex;
+    });
+
   if (filter === "unverified") {
-    return references.filter((reference) => !isAcceptedReference(reference));
+    return sortBySongOrder(
+      references.filter((reference) => !isAcceptedReference(reference))
+    );
   }
 
   if (filter === "verified-accepted") {
-    return references.filter(isAcceptedReference);
+    return sortBySongOrder(references.filter(isAcceptedReference));
   }
 
-  return references.filter(
-    (reference) =>
-      isAcceptedReference(reference) && reference.categories.includes(filter)
+  return sortBySongOrder(
+    references.filter(
+      (reference) =>
+        isAcceptedReference(reference) && reference.categories.includes(filter)
+    )
   );
 }
 

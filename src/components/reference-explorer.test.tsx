@@ -38,6 +38,7 @@ describe("ReferenceExplorer", () => {
             {
               id: "1",
               referentId: "10",
+              sortIndex: 0,
               fragment: "I finessed down Weston Road",
               annotation: "A reference to a Toronto street.",
               annotationHtml: null,
@@ -307,6 +308,7 @@ describe("ReferenceExplorer", () => {
             {
               id: "8225487",
               referentId: "referent-1",
+              sortIndex: 0,
               fragment: "First duplicated fragment",
               annotation: "First note.",
               annotationHtml: null,
@@ -320,6 +322,7 @@ describe("ReferenceExplorer", () => {
             {
               id: "8225487",
               referentId: "referent-2",
+              sortIndex: 1,
               fragment: "Second duplicated fragment",
               annotation: "Second note.",
               annotationHtml: null,
@@ -357,6 +360,88 @@ describe("ReferenceExplorer", () => {
     } finally {
       consoleErrorSpy.mockRestore();
     }
+  });
+
+  it("renders song references in lyric order", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              type: "song",
+              id: "3315890",
+              title: "God's Plan",
+              artist: "Drake",
+              artworkUrl: null,
+              sourceUrl: "https://genius.com/song",
+              metadata: { geniusId: 3315890 },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          song: {
+            type: "song",
+            id: "3315890",
+            title: "God's Plan",
+            artist: "Drake",
+            artworkUrl: null,
+            sourceUrl: "https://genius.com/song",
+            metadata: { geniusId: 3315890 },
+          },
+          references: [
+            {
+              id: "late",
+              referentId: "referent-late",
+              sortIndex: 2000,
+              fragment: "Later line",
+              annotation: "Later annotation.",
+              annotationHtml: null,
+              sourceUrl: "https://genius.com/annotation/late",
+              state: "accepted",
+              classification: "accepted",
+              verified: false,
+              votesTotal: 3,
+              categories: ["verified-accepted"],
+            },
+            {
+              id: "early",
+              referentId: "referent-early",
+              sortIndex: 0,
+              fragment: "Earlier line",
+              annotation: "Earlier annotation.",
+              annotationHtml: null,
+              sourceUrl: "https://genius.com/annotation/early",
+              state: "accepted",
+              classification: "accepted",
+              verified: false,
+              votesTotal: 5,
+              categories: ["verified-accepted"],
+            },
+          ],
+          source: "live",
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReferenceExplorer />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText("e.g. God's Plan"),
+      "drake gods plan"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByText("God's Plan");
+    await userEvent.click(screen.getByRole("button", { name: /God's Plan/i }));
+
+    expect(await screen.findByText("Earlier line")).toBeVisible();
+    expect(screen.getByText("Later line")).toBeVisible();
+    const pageText = document.body.textContent ?? "";
+    expect(pageText.indexOf("Earlier line")).toBeLessThan(
+      pageText.indexOf("Later line")
+    );
   });
 
   it("switches to album search", async () => {
@@ -421,6 +506,7 @@ describe("ReferenceExplorer", () => {
                 {
                   id: "ref-1",
                   referentId: "referent-1",
+                  sortIndex: 0,
                   fragment: "A hidden line",
                   annotation: "A hidden reference.",
                   annotationHtml: null,
@@ -450,6 +536,7 @@ describe("ReferenceExplorer", () => {
                 {
                   id: "ref-2",
                   referentId: "referent-2",
+                  sortIndex: 0,
                   fragment: "Another hidden line",
                   annotation: "Another hidden reference.",
                   annotationHtml: null,

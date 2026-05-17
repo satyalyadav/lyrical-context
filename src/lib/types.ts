@@ -37,6 +37,7 @@ export type SearchResult = SongSearchResult | AlbumSearchResult;
 export type Reference = {
   id: string;
   referentId: string;
+  sortIndex: number;
   fragment: string;
   annotation: string;
   annotationHtml: string | null;
