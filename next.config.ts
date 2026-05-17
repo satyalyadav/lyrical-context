@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import { networkInterfaces } from "node:os";
 
+const loopbackOrigins = ["localhost", "127.0.0.1"];
 const localNetworkOrigins = Object.values(networkInterfaces())
   .flat()
   .flatMap((address) =>
@@ -12,7 +13,7 @@ const localNetworkOrigins = Object.values(networkInterfaces())
   );
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: localNetworkOrigins,
+  allowedDevOrigins: [...loopbackOrigins, ...localNetworkOrigins],
   serverExternalPackages: ["better-sqlite3"],
 };
 

@@ -1,12 +1,39 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resetCacheForTests } from "@/lib/cache";
 import {
   findFragmentLyricPosition,
+  getGeniusSongReferences,
   normalizeGeniusSong,
   normalizeReferent,
 } from "@/lib/genius";
 
 describe("Genius normalizers", () => {
+  const originalGeniusAccessToken = process.env.GENIUS_ACCESS_TOKEN;
+
+  beforeEach(() => {
+    process.env.GENIUS_ACCESS_TOKEN = "test-token";
+    process.env.LYRICAL_CONTEXT_DB_PATH = path.join(
+      mkdtempSync(path.join(os.tmpdir(), "lyrical-context-genius-")),
+      "cache.sqlite"
+    );
+    resetCacheForTests();
+  });
+
+  afterEach(() => {
+    resetCacheForTests();
+    delete process.env.LYRICAL_CONTEXT_DB_PATH;
+
+    if (originalGeniusAccessToken) {
+      process.env.GENIUS_ACCESS_TOKEN = originalGeniusAccessToken;
+    } else {
+      delete process.env.GENIUS_ACCESS_TOKEN;
+    }
+  });
+
   it("normalizes search results without lyrics", () => {
     expect(
       normalizeGeniusSong({
@@ -130,4 +157,118 @@ describe("Genius normalizers", () => {
       )
     ).toBe(0);
   });
+
+  it("finds short fragments when a lyric source uses a nearby wording variant", () => {
+    expect(
+      findFragmentLyricPosition(
+        "Wet like I’m Lizzie",
+        "See the shots that I took, wet like I'm Book\nWet like I'm Lindsey, I be spinning Valley"
+      )
+    ).toBeGreaterThan(0);
+  });
+
+  it("finds fragments across dropped-g wording differences", () => {
+    expect(
+      findFragmentLyricPosition(
+        "I be spinnin’ Valley, circle blocks ’til I’m dizzy (Yeah, what?)",
+        "Wet like I'm Lizzie, I be spinning Valley, circle blocks til I'm dizzy"
+      )
+    ).toBeGreaterThan(0);
+  });
+
+  it("finds fragments across adjacent-word spacing differences", () => {
+    expect(
+      findFragmentLyricPosition(
+        "Young La Flame, he in sicko mode",
+        "Going on you with the pick and roll, young laflame he in sicko mode"
+      )
+    ).toBeGreaterThan(0);
+  });
+
+  it("orders references using another lyric source when the first one misses a fragment", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url.startsWith("https://api.genius.com/referents")) {
+          return jsonResponse({
+            response: {
+              referents: [
+                geniusReferent({
+                  id: 1,
+                  fragment: "First annotated line",
+                  annotation: "First annotation.",
+                }),
+                geniusReferent({
+                  id: 2,
+                  fragment: "Second annotated line",
+                  annotation: "Second annotation.",
+                }),
+              ],
+            },
+          });
+        }
+
+        if (url.startsWith("https://lrclib.net/api/get")) {
+          return jsonResponse({
+            plainLyrics: "First annotated line\nUnrelated lyric source variant",
+          });
+        }
+
+        if (url.startsWith("https://api.lyrics.ovh/v1")) {
+          return jsonResponse({
+            lyrics: "First annotated line\nSecond annotated line",
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    const { value: references } = await getGeniusSongReferences("song-id", {
+      title: "Example Song",
+      artist: "Example Artist",
+    });
+
+    expect(references.map((reference) => reference.fragment)).toEqual([
+      "First annotated line",
+      "Second annotated line",
+    ]);
+    expect(references[1].sortIndex).toBeLessThan(1_000_000_000);
+  });
 });
+
+function geniusReferent({
+  id,
+  fragment,
+  annotation,
+}: {
+  id: number;
+  fragment: string;
+  annotation: string;
+}) {
+  return {
+    id,
+    fragment,
+    classification: "accepted",
+    annotations: [
+      {
+        id,
+        state: "accepted",
+        body: {
+          plain: annotation,
+        },
+      },
+    ],
+  };
+}
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+}

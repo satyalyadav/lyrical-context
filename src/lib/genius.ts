@@ -15,13 +15,17 @@ const LRCLIB_API_BASE = "https://lrclib.net/api";
 const LYRICS_OVH_API_BASE = "https://api.lyrics.ovh/v1";
 const SEARCH_TTL_SECONDS = 60 * 60 * 24;
 const REFERENCES_TTL_SECONDS = 60 * 30;
-const REFERENCES_CACHE_VERSION = 4;
+const REFERENCES_CACHE_VERSION = 7;
 const MAX_REFERENT_PAGES = 6;
 const REFERENTS_PER_PAGE = 50;
 const ANNOTATION_SORT_BUCKET_SIZE = 1000;
 const LYRIC_POSITION_SORT_BUCKET_SIZE = 10_000;
 const FALLBACK_SORT_BASE = 1_000_000_000;
 const LYRIC_LOOKUP_TIMEOUT_MS = 4000;
+const FUZZY_POSITION_MIN_TOKENS = 5;
+const FUZZY_POSITION_MIN_SIGNIFICANT_TOKENS = 2;
+const FUZZY_POSITION_MIN_SCORE = 0.8;
+const FUZZY_POSITION_MAX_TOKEN_DELTA = 2;
 
 type GeniusSearchResponse = {
   response?: {
@@ -88,6 +92,11 @@ type LrclibLyricsResponse = {
 
 type LyricsOvhResponse = {
   lyrics?: string | null;
+};
+
+type LyricOrderText = {
+  lyrics: string;
+  normalizedLength: number;
 };
 
 export async function searchGeniusSongs(query: string, limit = 12) {
@@ -221,39 +230,95 @@ async function resolveReferentLyricPositions(
   referents: GeniusReferent[],
   orderContext?: SongReferenceOrderContext
 ) {
-  const lyrics = await fetchLyricOrderText(orderContext);
+  const lyricTexts = await fetchLyricOrderTexts(orderContext);
   const positions = new Map<number, number>();
 
-  if (!lyrics) {
+  if (!lyricTexts.length) {
     return positions;
   }
 
+  const lyricPositionSets = lyricTexts.map((lyricText) => {
+    const sourcePositions = new Map<number, number>();
+
+    for (const referent of referents) {
+      const position = findFragmentLyricPosition(
+        referent.range?.content ?? referent.fragment ?? "",
+        lyricText.lyrics
+      );
+
+      if (position !== null) {
+        sourcePositions.set(referent.id, position);
+      }
+    }
+
+    return {
+      ...lyricText,
+      positions: sourcePositions,
+    };
+  });
+
+  const primaryLyricSet = lyricPositionSets.reduce((best, current) =>
+    current.positions.size > best.positions.size ? current : best
+  );
+
   for (const referent of referents) {
-    const position = findFragmentLyricPosition(
-      referent.range?.content ?? referent.fragment ?? "",
-      lyrics
+    const primaryPosition = primaryLyricSet.positions.get(referent.id);
+
+    if (primaryPosition !== undefined) {
+      positions.set(referent.id, primaryPosition);
+      continue;
+    }
+
+    const fallbackSet = lyricPositionSets.find((lyricSet) =>
+      lyricSet.positions.has(referent.id)
     );
 
-    if (position !== null) {
-      positions.set(referent.id, position);
+    if (!fallbackSet) {
+      continue;
+    }
+
+    const fallbackPosition = fallbackSet.positions.get(referent.id);
+
+    if (fallbackPosition !== undefined) {
+      positions.set(
+        referent.id,
+        projectLyricPosition(fallbackPosition, fallbackSet, primaryLyricSet)
+      );
     }
   }
 
   return positions;
 }
 
-async function fetchLyricOrderText(orderContext?: SongReferenceOrderContext) {
+async function fetchLyricOrderTexts(orderContext?: SongReferenceOrderContext) {
   const title = orderContext?.title?.trim();
   const artist = orderContext?.artist?.trim();
 
   if (!title || !artist) {
-    return null;
+    return [];
   }
 
-  return (
-    (await fetchLrclibLyrics(artist, title)) ??
-    (await fetchLyricsOvhLyrics(artist, title))
-  );
+  const lyricResults = await Promise.all([
+    fetchLrclibLyrics(artist, title),
+    fetchLyricsOvhLyrics(artist, title),
+  ]);
+  const seen = new Set<string>();
+
+  return lyricResults.flatMap((lyrics) => {
+    const normalizedLyrics = lyrics ? normalizeLyricsForPosition(lyrics) : "";
+
+    if (!lyrics || !normalizedLyrics || seen.has(normalizedLyrics)) {
+      return [];
+    }
+
+    seen.add(normalizedLyrics);
+    return [
+      {
+        lyrics,
+        normalizedLength: normalizedLyrics.length,
+      } satisfies LyricOrderText,
+    ];
+  });
 }
 
 async function fetchLrclibLyrics(artist: string, title: string) {
@@ -318,13 +383,9 @@ export function findFragmentLyricPosition(fragment: string, lyrics: string) {
     return null;
   }
 
-  for (const candidate of getFragmentPositionCandidates(fragment)) {
-    const normalizedCandidate = normalizeLyricsForPosition(candidate);
+  const normalizedCandidates = getNormalizedFragmentPositionCandidates(fragment);
 
-    if (!normalizedCandidate) {
-      continue;
-    }
-
+  for (const normalizedCandidate of normalizedCandidates) {
     const position = normalizedLyrics.indexOf(normalizedCandidate);
 
     if (position !== -1) {
@@ -332,7 +393,148 @@ export function findFragmentLyricPosition(fragment: string, lyrics: string) {
     }
   }
 
+  const lyricTokens = tokenizeNormalizedLyrics(normalizedLyrics);
+
+  for (const normalizedCandidate of normalizedCandidates) {
+    const position = findFuzzyFragmentPosition(normalizedCandidate, lyricTokens);
+
+    if (position !== null) {
+      return position;
+    }
+  }
+
   return null;
+}
+
+function findFuzzyFragmentPosition(
+  normalizedCandidate: string,
+  lyricTokens: LyricToken[]
+) {
+  const candidateTokens = normalizedCandidate.split(" ").filter(Boolean);
+
+  if (
+    candidateTokens.length < FUZZY_POSITION_MIN_TOKENS ||
+    countSignificantTokens(candidateTokens) <
+      FUZZY_POSITION_MIN_SIGNIFICANT_TOKENS
+  ) {
+    return null;
+  }
+
+  let bestMatch: { score: number; position: number } | null = null;
+  const minWindowSize = Math.max(
+    FUZZY_POSITION_MIN_TOKENS,
+    candidateTokens.length - FUZZY_POSITION_MAX_TOKEN_DELTA
+  );
+  const maxWindowSize = candidateTokens.length + FUZZY_POSITION_MAX_TOKEN_DELTA;
+
+  for (let windowSize = minWindowSize; windowSize <= maxWindowSize; windowSize += 1) {
+    for (let index = 0; index <= lyricTokens.length - windowSize; index += 1) {
+      const windowTokens = lyricTokens.slice(index, index + windowSize);
+      const score =
+        longestCommonTokenSubsequenceLength(candidateTokens, windowTokens) /
+        Math.max(candidateTokens.length, windowTokens.length);
+
+      if (!bestMatch || score > bestMatch.score) {
+        bestMatch = {
+          score,
+          position: windowTokens[0].position,
+        };
+      }
+    }
+  }
+
+  return bestMatch && bestMatch.score >= FUZZY_POSITION_MIN_SCORE
+    ? bestMatch.position
+    : null;
+}
+
+type LyricToken = {
+  value: string;
+  looseValue: string;
+  position: number;
+};
+
+function tokenizeNormalizedLyrics(value: string): LyricToken[] {
+  return Array.from(value.matchAll(/\S+/g), (match) => {
+    const token = match[0];
+
+    return {
+      value: token,
+      looseValue: normalizeLooseLyricToken(token),
+      position: match.index ?? 0,
+    };
+  });
+}
+
+function longestCommonTokenSubsequenceLength(
+  candidateTokens: string[],
+  lyricTokens: LyricToken[]
+) {
+  const previousRow = Array(lyricTokens.length + 1).fill(0);
+  const currentRow = Array(lyricTokens.length + 1).fill(0);
+
+  for (const candidateToken of candidateTokens) {
+    const candidateLooseToken = normalizeLooseLyricToken(candidateToken);
+
+    for (let index = 0; index < lyricTokens.length; index += 1) {
+      currentRow[index + 1] =
+        candidateToken === lyricTokens[index].value ||
+        candidateLooseToken === lyricTokens[index].looseValue
+          ? previousRow[index] + 1
+          : Math.max(previousRow[index + 1], currentRow[index]);
+    }
+
+    for (let index = 0; index < currentRow.length; index += 1) {
+      previousRow[index] = currentRow[index];
+      currentRow[index] = 0;
+    }
+  }
+
+  return previousRow[lyricTokens.length];
+}
+
+function countSignificantTokens(tokens: string[]) {
+  return tokens.filter((token) => !isLowSignalLyricToken(token)).length;
+}
+
+function isLowSignalLyricToken(token: string) {
+  return token.length <= 1 || LOW_SIGNAL_LYRIC_TOKENS.has(token);
+}
+
+function normalizeLooseLyricToken(token: string) {
+  return token.endsWith("ing") && token.length > 5 ? token.slice(0, -1) : token;
+}
+
+const LOW_SIGNAL_LYRIC_TOKENS = new Set([
+  "a",
+  "an",
+  "and",
+  "be",
+  "for",
+  "i",
+  "in",
+  "is",
+  "it",
+  "m",
+  "my",
+  "of",
+  "on",
+  "the",
+  "to",
+  "uh",
+  "yeah",
+]);
+
+function projectLyricPosition(
+  position: number,
+  source: LyricOrderText,
+  target: LyricOrderText
+) {
+  if (source.normalizedLength <= 0 || target.normalizedLength <= 0) {
+    return position;
+  }
+
+  return Math.round((position / source.normalizedLength) * target.normalizedLength);
 }
 
 function getFragmentPositionCandidates(fragment: string) {
@@ -350,6 +552,33 @@ function getFragmentPositionCandidates(fragment: string) {
   }
 
   return Array.from(new Set(candidates));
+}
+
+function getNormalizedFragmentPositionCandidates(fragment: string) {
+  const normalizedCandidates = getFragmentPositionCandidates(fragment)
+    .map((candidate) => normalizeLyricsForPosition(candidate))
+    .filter(Boolean);
+
+  return Array.from(
+    new Set(normalizedCandidates.flatMap((candidate) => [
+      candidate,
+      ...getAdjacentTokenJoinVariants(candidate),
+    ]))
+  );
+}
+
+function getAdjacentTokenJoinVariants(normalizedCandidate: string) {
+  const tokens = normalizedCandidate.split(" ").filter(Boolean);
+
+  if (tokens.length < 2) {
+    return [];
+  }
+
+  return tokens.slice(0, -1).map((_, index) => [
+    ...tokens.slice(0, index),
+    `${tokens[index]}${tokens[index + 1]}`,
+    ...tokens.slice(index + 2),
+  ].join(" "));
 }
 
 function removeLyricSectionLabels(value: string) {
