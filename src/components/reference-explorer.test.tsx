@@ -32,9 +32,9 @@ describe("ReferenceExplorer", () => {
             artist: "Drake",
             artworkUrl: null,
             sourceUrl: "https://genius.com/song",
-            metadata: { geniusId: 3315890 },
-          },
-          references: [
+          metadata: { geniusId: 3315890 },
+        },
+        references: [
             {
               id: "1",
               referentId: "10",
@@ -69,9 +69,81 @@ describe("ReferenceExplorer", () => {
     expect(within(resultButton).queryByText("song")).not.toBeInTheDocument();
     await userEvent.click(resultButton);
 
-    expect(await screen.findByText("I finessed down Weston Road")).toBeVisible();
-    expect(screen.getByText("A reference to a Toronto street.")).toBeVisible();
-    expect(screen.queryByText("Source: Genius")).not.toBeInTheDocument();
+      expect(await screen.findByText("I finessed down Weston Road")).toBeVisible();
+      expect(screen.getByText("A reference to a Toronto street.")).toBeVisible();
+      expect(screen.queryByText("Source: Genius")).not.toBeInTheDocument();
+    });
+
+  it("shows music metadata for the selected song", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              type: "song",
+              id: "3876994",
+              title: "SICKO MODE",
+              artist: "Travis Scott",
+              artworkUrl: null,
+              sourceUrl: "https://genius.com/song",
+              metadata: { geniusId: 3876994 },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          song: {
+            type: "song",
+            id: "3876994",
+            title: "SICKO MODE",
+            artist: "Travis Scott",
+            artworkUrl: null,
+            sourceUrl: "https://genius.com/song",
+            metadata: {
+              geniusId: 3876994,
+              releaseYear: "2018",
+              albumTitle: "ASTROWORLD",
+              featuredArtists: ["Drake"],
+            },
+          },
+          references: [
+            {
+              id: "1",
+              referentId: "10",
+              sortIndex: 0,
+              fragment: "See the shots that I took",
+              annotation: "Annotation.",
+              annotationHtml: null,
+              sourceUrl: "https://genius.com/annotation",
+              state: "accepted",
+              classification: "accepted",
+              verified: false,
+              votesTotal: 12,
+              categories: ["verified-accepted"],
+            },
+          ],
+          source: "live",
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReferenceExplorer />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText("e.g. God's Plan"),
+      "sicko mode"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /SICKO MODE/i })
+    );
+
+    expect(await screen.findByText("2018")).toBeVisible();
+    expect(screen.getByText("1 annotations")).toBeVisible();
+    expect(screen.getByText("Album: ASTROWORLD")).toBeVisible();
+    expect(screen.getByText("Feat. Drake")).toBeVisible();
   });
 
   it("surfaces setup errors from the API", async () => {
@@ -569,6 +641,9 @@ describe("ReferenceExplorer", () => {
     await userEvent.click(screen.getByRole("button", { name: /Scorpion/i }));
 
     await screen.findByRole("button", { name: /First Track/i });
+    expect(screen.getAllByText("2018").length).toBeGreaterThan(0);
+    expect(screen.getByText("2 tracks")).toBeVisible();
+    expect(screen.getByText("2/2 matched")).toBeVisible();
     expect(screen.queryByText("A hidden line")).not.toBeInTheDocument();
     expect(screen.queryByText("Another hidden line")).not.toBeInTheDocument();
 

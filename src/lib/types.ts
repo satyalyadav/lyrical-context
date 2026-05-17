@@ -15,6 +15,9 @@ export type SongSearchResult = {
   sourceUrl: string;
   metadata: {
     geniusId: number;
+    releaseYear?: string | null;
+    albumTitle?: string | null;
+    featuredArtists?: string[];
   };
 };
 

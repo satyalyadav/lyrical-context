@@ -3,6 +3,7 @@ import "server-only";
 import { getCachedJson, setCachedJson } from "@/lib/cache";
 import { LyricalContextError } from "@/lib/errors";
 import {
+  getGeniusSongDetails,
   getGeniusSongReferences,
   searchGeniusSongs,
 } from "@/lib/genius";
@@ -49,22 +50,27 @@ export async function getSongReferenceResponse(
     sourceUrl?: string | null;
   }
 ): Promise<SongReferenceResponse> {
-  const { value: references, source } = await getGeniusSongReferences(songId, {
-    title: fallback?.title,
-    artist: fallback?.artist,
-  });
+  const [{ value: references, source }, { value: songDetails }] = await Promise.all([
+    getGeniusSongReferences(songId, {
+      title: fallback?.title,
+      artist: fallback?.artist,
+    }),
+    getGeniusSongDetails(songId),
+  ]);
 
   return {
     song: {
       type: "song",
       id: songId,
-      title: fallback?.title || "Selected song",
-      artist: fallback?.artist || "Genius",
-      artworkUrl: fallback?.artworkUrl ?? null,
-      sourceUrl:
-        fallback?.sourceUrl ?? `https://genius.com/songs/${encodeURIComponent(songId)}`,
+      title: fallback?.title || songDetails.title,
+      artist: fallback?.artist || songDetails.artist,
+      artworkUrl: fallback?.artworkUrl ?? songDetails.artworkUrl,
+      sourceUrl: fallback?.sourceUrl ?? songDetails.sourceUrl,
       metadata: {
         geniusId: Number(songId),
+        releaseYear: songDetails.metadata.releaseYear ?? null,
+        albumTitle: songDetails.metadata.albumTitle ?? null,
+        featuredArtists: songDetails.metadata.featuredArtists ?? [],
       },
     },
     references,

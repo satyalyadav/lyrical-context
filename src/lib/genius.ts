@@ -33,6 +33,12 @@ type GeniusSearchResponse = {
   };
 };
 
+type GeniusSongResponse = {
+  response?: {
+    song?: GeniusSong;
+  };
+};
+
 type GeniusHit = {
   result?: GeniusSong;
 };
@@ -43,8 +49,15 @@ type GeniusSong = {
   full_title?: string;
   url: string;
   api_path?: string;
+  release_date_for_display?: string | null;
   song_art_image_thumbnail_url?: string;
   song_art_image_url?: string;
+  album?: {
+    name?: string | null;
+  } | null;
+  featured_artists?: Array<{
+    name?: string | null;
+  }>;
   primary_artist?: {
     name?: string;
   };
@@ -161,6 +174,27 @@ export async function getGeniusSongReferences(
   });
 }
 
+export async function getGeniusSongDetails(songId: string) {
+  const key = `genius:song:${songId}`;
+
+  return withJsonCache(key, SEARCH_TTL_SECONDS, async () => {
+    const payload = await geniusRequest<GeniusSongResponse>(
+      `/songs/${encodeURIComponent(songId)}`
+    );
+    const song = payload.response?.song;
+
+    if (!song) {
+      throw new LyricalContextError(
+        "song_not_found",
+        "That song could not be found on Genius.",
+        404
+      );
+    }
+
+    return normalizeGeniusSong(song);
+  });
+}
+
 export function normalizeGeniusSong(song: GeniusSong): SongSearchResult {
   return {
     type: "song",
@@ -171,8 +205,17 @@ export function normalizeGeniusSong(song: GeniusSong): SongSearchResult {
     sourceUrl: song.url,
     metadata: {
       geniusId: song.id,
+      releaseYear: extractReleaseYear(song.release_date_for_display),
+      albumTitle: song.album?.name ?? null,
+      featuredArtists: (song.featured_artists ?? [])
+        .map((artist) => artist.name)
+        .filter((name): name is string => Boolean(name)),
     },
   };
+}
+
+function extractReleaseYear(value?: string | null) {
+  return value?.match(/\b\d{4}\b/)?.[0] ?? null;
 }
 
 export function normalizeReferent(

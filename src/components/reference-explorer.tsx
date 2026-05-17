@@ -555,7 +555,7 @@ function ReferenceWorkspace({
   filteredReferences: Reference[];
   onFilterChange: (filter: ReferenceFilter) => void;
 }) {
-  const result = detail.result;
+  const result = detail.type === "song" ? detail.data.song : detail.data.album;
   const totalReferences =
     detail.type === "song"
       ? detail.data.references.length
@@ -567,27 +567,53 @@ function ReferenceWorkspace({
     detail.type === "album"
       ? detail.data.tracks.filter((track) => track.matchStatus !== "matched").length
       : 0;
-  const year = result.type === "album" ? result.metadata.releaseYear : null;
+  const matchedTracks =
+    detail.type === "album"
+      ? detail.data.tracks.filter((track) => track.matchStatus === "matched").length
+      : 0;
+  const metadataItems = [
+    result.artist,
+    result.metadata.releaseYear ?? null,
+    `${totalReferences} annotations`,
+    ...(detail.type === "song"
+      ? [
+          detail.data.song.metadata.albumTitle
+            ? `Album: ${detail.data.song.metadata.albumTitle}`
+            : null,
+          detail.data.song.metadata.featuredArtists?.length
+            ? `Feat. ${formatArtistList(
+                detail.data.song.metadata.featuredArtists
+              )}`
+            : null,
+        ]
+      : [
+          detail.data.album.metadata.trackCount
+            ? `${detail.data.album.metadata.trackCount} tracks`
+            : `${detail.data.tracks.length} tracks`,
+          `${matchedTracks}/${detail.data.tracks.length} matched`,
+        ]),
+  ].filter((item): item is string => Boolean(item));
+  const issueItems =
+    detail.type === "song"
+      ? []
+      : unmatchedTracks
+        ? [`${unmatchedTracks} track issues`]
+        : [];
 
   return (
     <div>
-      <header className="sticky top-0 z-20 border-b border-[#c8c7bf]/70 bg-[#fbf9f4]/95 px-6 py-8 backdrop-blur">
-        <div className="mx-auto flex max-w-[1120px] items-end gap-6">
+      <header className="sticky top-0 z-20 border-b border-[#c8c7bf]/70 bg-[#fbf9f4]/95 px-4 py-4 backdrop-blur sm:px-6">
+        <div className="mx-auto flex max-w-[1120px] items-center gap-4">
           <Artwork url={result.artworkUrl} title={result.title} size="lg" />
-          <div className="min-w-0 flex-1 pb-1">
-            <h2 className="[font-family:var(--font-newsreader)] text-4xl font-semibold leading-tight tracking-[-0.02em] text-[#181916] md:text-5xl">
+          <div className="min-w-0 flex-1">
+            <h2 className="[font-family:var(--font-newsreader)] text-2xl font-semibold leading-8 text-[#181916] md:text-3xl md:leading-9">
               {result.title}
             </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[#777770]">
-              <span>{result.artist}</span>
-              {year ? (
-                <>
-                  <span className="size-1 rounded-full bg-[#c8c7bf]" />
-                  <span>{year}</span>
-                </>
-              ) : null}
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[#777770]">
+              <MetadataItems items={metadataItems} />
+              <MetadataItems className="text-[#ba1a1a]" items={issueItems} />
               <a
-                className="ml-auto inline-flex items-center gap-1 rounded border border-[#c8c7bf] px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#474741] transition hover:border-[#181916] hover:text-[#181916]"
+                className="inline-flex items-center gap-1 rounded border border-[#c8c7bf] px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#474741] transition hover:border-[#181916] hover:text-[#181916] md:ml-auto"
                 href={result.sourceUrl}
                 target="_blank"
                 rel="noreferrer"
@@ -596,21 +622,10 @@ function ReferenceWorkspace({
                 <ArrowUpRight className="size-3.5" />
               </a>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <span className="inline-flex h-6 min-w-[8.75rem] items-center justify-center gap-1 rounded-full bg-[#ffca98]/30 px-3 text-xs font-semibold text-[#7a532a]">
-                <Sparkles className="size-3.5" />
-                {totalReferences} references
-              </span>
-              {unmatchedTracks ? (
-                <span className="rounded border border-[#ba1a1a]/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#ba1a1a]">
-                  {unmatchedTracks} track issues
-                </span>
-              ) : null}
-            </div>
           </div>
         </div>
 
-        <div className="mx-auto mt-6 flex max-w-[1120px] gap-2 overflow-x-auto pb-1">
+        <div className="mx-auto mt-3 flex max-w-[1120px] gap-2 overflow-x-auto pb-1">
           {FILTERS.map((item) => {
             const Icon = item.icon;
             const active = filter === item.value;
@@ -881,27 +896,33 @@ function WorkspaceLoading({
   message: string;
 }) {
   const isAlbum = result.type === "album";
-  const year = result.type === "album" ? result.metadata.releaseYear : null;
+  const metadataItems = [
+    result.artist,
+    result.type === "album" ? result.metadata.releaseYear : null,
+    "Loading annotations",
+    ...(result.type === "album" && result.metadata.trackCount
+      ? [`${result.metadata.trackCount} tracks`]
+      : []),
+  ].filter((item): item is string => Boolean(item));
+  const loadingItem =
+    result.type === "album" && result.metadata.trackCount
+      ? null
+      : message;
 
   return (
     <div aria-live="polite">
-      <header className="sticky top-0 z-20 border-b border-[#c8c7bf]/70 bg-[#fbf9f4]/95 px-6 py-8 backdrop-blur">
-        <div className="mx-auto flex max-w-[1120px] items-end gap-6">
+      <header className="sticky top-0 z-20 border-b border-[#c8c7bf]/70 bg-[#fbf9f4]/95 px-4 py-4 backdrop-blur sm:px-6">
+        <div className="mx-auto flex max-w-[1120px] items-center gap-4">
           <Artwork url={result.artworkUrl} title={result.title} size="lg" />
-          <div className="min-w-0 flex-1 pb-1">
-            <h2 className="[font-family:var(--font-newsreader)] text-4xl font-semibold leading-tight tracking-[-0.02em] text-[#181916] md:text-5xl">
+          <div className="min-w-0 flex-1">
+            <h2 className="[font-family:var(--font-newsreader)] text-2xl font-semibold leading-8 text-[#181916] md:text-3xl md:leading-9">
               {result.title}
             </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[#777770]">
-              <span>{result.artist}</span>
-              {year ? (
-                <>
-                  <span className="size-1 rounded-full bg-[#c8c7bf]" />
-                  <span>{year}</span>
-                </>
-              ) : null}
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[#777770]">
+              <MetadataItems items={metadataItems} />
+              {loadingItem ? <span className="sr-only">{loadingItem}</span> : null}
               <a
-                className="ml-auto inline-flex items-center gap-1 rounded border border-[#c8c7bf] px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#474741] transition hover:border-[#181916] hover:text-[#181916]"
+                className="inline-flex items-center gap-1 rounded border border-[#c8c7bf] px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#474741] transition hover:border-[#181916] hover:text-[#181916] md:ml-auto"
                 href={result.sourceUrl}
                 target="_blank"
                 rel="noreferrer"
@@ -909,13 +930,6 @@ function WorkspaceLoading({
                 Source
                 <ArrowUpRight className="size-3.5" />
               </a>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <span className="inline-flex h-6 min-w-[8.75rem] items-center justify-center gap-1 rounded-full bg-[#ffca98]/30 px-3 text-xs font-semibold text-[#7a532a]">
-                <Sparkles className="size-3.5" />
-                <span className="sr-only">{message}</span>
-                <span className="h-3 w-24 animate-pulse rounded bg-[#d59a65]/35" />
-              </span>
             </div>
           </div>
         </div>
@@ -1011,6 +1025,36 @@ function referenceKey(reference: Reference, index: number) {
   ].join("-");
 }
 
+function MetadataItems({
+  className = "",
+  items,
+}: {
+  className?: string;
+  items: string[];
+}) {
+  return (
+    <>
+      {items.map((item, index) => (
+        <span key={`${item}-${index}`} className="contents">
+          {index > 0 ? (
+            <span className="size-1 rounded-full bg-[#c8c7bf]" />
+          ) : null}
+          <span className={className}>{item}</span>
+        </span>
+      ))}
+    </>
+  );
+}
+
+function formatArtistList(artists: string[]) {
+  const visibleArtists = artists.slice(0, 2).join(", ");
+  const hiddenArtistCount = artists.length - 2;
+
+  return hiddenArtistCount > 0
+    ? `${visibleArtists} +${hiddenArtistCount}`
+    : visibleArtists;
+}
+
 function WorkspaceError({
   result,
   message,
@@ -1104,7 +1148,7 @@ function Artwork({
 }) {
   const className =
     size === "lg"
-      ? "size-28 rounded object-cover shadow-sm md:size-32"
+      ? "size-20 rounded object-cover shadow-sm md:size-24"
       : "size-12 rounded object-cover";
 
   if (url) {

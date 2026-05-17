@@ -50,7 +50,33 @@ describe("Genius normalizers", () => {
       artist: "Drake",
       artworkUrl: "https://images.genius.com/art.jpg",
       sourceUrl: "https://genius.com/Drake-gods-plan-lyrics",
-      metadata: { geniusId: 3315890 },
+      metadata: {
+        geniusId: 3315890,
+        releaseYear: null,
+        albumTitle: null,
+        featuredArtists: [],
+      },
+    });
+  });
+
+  it("normalizes song metadata for the selected header", () => {
+    expect(
+      normalizeGeniusSong({
+        id: 3876994,
+        title: "SICKO MODE",
+        url: "https://genius.com/Travis-scott-sicko-mode-lyrics",
+        release_date_for_display: "August 3, 2018",
+        album: { name: "ASTROWORLD" },
+        featured_artists: [{ name: "Drake" }, { name: null }],
+        primary_artist: { name: "Travis Scott" },
+      })
+    ).toMatchObject({
+      metadata: {
+        geniusId: 3876994,
+        releaseYear: "2018",
+        albumTitle: "ASTROWORLD",
+        featuredArtists: ["Drake"],
+      },
     });
   });
 
