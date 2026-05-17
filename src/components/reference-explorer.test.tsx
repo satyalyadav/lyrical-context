@@ -76,7 +76,7 @@ describe("ReferenceExplorer", () => {
   it("surfaces setup errors from the API", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValueOnce(
+      vi.fn().mockResolvedValue(
         jsonResponse(
           {
             error: {
@@ -99,6 +99,113 @@ describe("ReferenceExplorer", () => {
     expect(
       await screen.findByText("Set GENIUS_ACCESS_TOKEN in .env.local.")
     ).toBeVisible();
+  });
+
+  it("searches automatically while typing", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        results: [
+          {
+            type: "song",
+            id: "3315890",
+            title: "God's Plan",
+            artist: "Drake",
+            artworkUrl: null,
+            sourceUrl: "https://genius.com/song",
+            metadata: { geniusId: 3315890 },
+          },
+        ],
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReferenceExplorer />);
+
+    await userEvent.type(screen.getByPlaceholderText("e.g. God's Plan"), "god");
+
+    const resultButton = await screen.findByRole("button", {
+      name: /God's Plan/i,
+    });
+    expect(resultButton).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/search?type=song&q=god",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+  });
+
+  it("keeps song and album search state separate", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              type: "song",
+              id: "3315890",
+              title: "God's Plan",
+              artist: "Drake",
+              artworkUrl: null,
+              sourceUrl: "https://genius.com/song",
+              metadata: { geniusId: 3315890 },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              type: "album",
+              id: "1406109769",
+              title: "Scorpion",
+              artist: "Drake",
+              artworkUrl: null,
+              sourceUrl: "https://music.apple.com/album",
+              metadata: {
+                collectionId: 1406109769,
+                trackCount: 25,
+                releaseYear: "2018",
+              },
+            },
+          ],
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReferenceExplorer />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText("e.g. God's Plan"),
+      "God's Plan"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    expect(
+      await screen.findByRole("button", { name: /God's Plan/i })
+    ).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "Album" }));
+
+    expect(screen.getByPlaceholderText("e.g. Scorpion")).toHaveValue("");
+    expect(
+      screen.queryByRole("button", { name: /God's Plan/i })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("No search yet")).toBeVisible();
+
+    await userEvent.type(screen.getByPlaceholderText("e.g. Scorpion"), "Scorpion");
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    expect(
+      await screen.findByRole("button", { name: /Scorpion/i })
+    ).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "Song" }));
+
+    expect(screen.getByPlaceholderText("e.g. God's Plan")).toHaveValue(
+      "God's Plan"
+    );
+    expect(screen.getByRole("button", { name: /God's Plan/i })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /Scorpion/i })
+    ).not.toBeInTheDocument();
   });
 
   it("shows a skeleton workspace while references load", async () => {

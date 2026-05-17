@@ -17,7 +17,15 @@ import {
   Target,
   UserRoundSearch,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type {
   AlbumReferenceResponse,
@@ -30,6 +38,14 @@ import type {
 } from "@/lib/types";
 
 type ReferenceFilter = "unverified" | ReferenceCategory;
+
+type SearchPanelState = {
+  query: string;
+  results: SearchResult[];
+  searching: boolean;
+  error: string | null;
+  hasSearched: boolean;
+};
 
 type DetailState =
   | { type: "idle" }
@@ -58,16 +74,49 @@ const FILTERS: Array<{
   { value: "unverified", label: "Unverified", icon: Sparkles },
 ];
 
+const SEARCH_DEBOUNCE_MS = 350;
+
+const INITIAL_SEARCH_STATE: Record<SearchType, SearchPanelState> = {
+  song: {
+    query: "",
+    results: [],
+    searching: false,
+    error: null,
+    hasSearched: false,
+  },
+  album: {
+    query: "",
+    results: [],
+    searching: false,
+    error: null,
+    hasSearched: false,
+  },
+};
+
 export function ReferenceExplorer() {
   const [searchType, setSearchType] = useState<SearchType>("song");
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [searching, setSearching] = useState(false);
+  const [searchState, setSearchState] =
+    useState<Record<SearchType, SearchPanelState>>(INITIAL_SEARCH_STATE);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [loadingMessage, setLoadingMessage] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<DetailState>({ type: "idle" });
   const [filter, setFilter] = useState<ReferenceFilter>("verified-accepted");
+  const searchAbortRef = useRef<Record<SearchType, AbortController | null>>({
+    song: null,
+    album: null,
+  });
+  const searchRequestRef = useRef<Record<SearchType, number>>({
+    song: 0,
+    album: 0,
+  });
+  const lastRequestedQueryRef = useRef<Record<SearchType, string>>({
+    song: "",
+    album: "",
+  });
+  const currentSearch = searchState[searchType];
+  const query = currentSearch.query;
+  const results = currentSearch.results;
+  const searching = currentSearch.searching;
 
   const allReferences = useMemo(() => {
     if (detail.type === "song") {
@@ -93,37 +142,198 @@ export function ReferenceExplorer() {
     }, {} as Record<ReferenceFilter, number>);
   }, [allReferences]);
 
+  const performSearch = useCallback(
+    async (
+      type: SearchType,
+      rawQuery: string,
+      options: { force?: boolean } = {}
+    ) => {
+      const trimmedQuery = rawQuery.trim();
+
+      if (trimmedQuery.length < 2) {
+        searchAbortRef.current[type]?.abort();
+        lastRequestedQueryRef.current[type] = "";
+        setSearchState((current) => {
+          const panel = current[type];
+
+          if (
+            !panel.results.length &&
+            !panel.searching &&
+            !panel.error &&
+            !panel.hasSearched
+          ) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [type]: {
+              ...panel,
+              results: [],
+              searching: false,
+              error: null,
+              hasSearched: false,
+            },
+          };
+        });
+        return;
+      }
+
+      if (
+        !options.force &&
+        lastRequestedQueryRef.current[type] === trimmedQuery
+      ) {
+        return;
+      }
+
+      lastRequestedQueryRef.current[type] = trimmedQuery;
+      searchRequestRef.current[type] += 1;
+      const requestId = searchRequestRef.current[type];
+
+      searchAbortRef.current[type]?.abort();
+      const controller = new AbortController();
+      searchAbortRef.current[type] = controller;
+
+      setSearchState((current) => ({
+        ...current,
+        [type]: {
+          ...current[type],
+          searching: true,
+          error: null,
+          hasSearched: true,
+        },
+      }));
+
+      try {
+        const response = await fetch(
+          `/api/search?type=${type}&q=${encodeURIComponent(trimmedQuery)}`,
+          { signal: controller.signal }
+        );
+        const payload = await parseResponse<{ results: SearchResult[] }>(
+          response
+        );
+
+        if (searchRequestRef.current[type] !== requestId) {
+          return;
+        }
+
+        setSearchState((current) => ({
+          ...current,
+          [type]: {
+            ...current[type],
+            results: payload.results,
+            searching: false,
+            error: null,
+            hasSearched: true,
+          },
+        }));
+      } catch (requestError) {
+        if (isAbortError(requestError)) {
+          return;
+        }
+
+        if (searchRequestRef.current[type] !== requestId) {
+          return;
+        }
+
+        setSearchState((current) => ({
+          ...current,
+          [type]: {
+            ...current[type],
+            results: [],
+            searching: false,
+            error: publicMessage(requestError),
+            hasSearched: true,
+          },
+        }));
+      } finally {
+        if (searchRequestRef.current[type] === requestId) {
+          searchAbortRef.current[type] = null;
+        }
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    const trimmedQuery = query.trim();
+
+    if (trimmedQuery.length < 2) {
+      searchAbortRef.current[searchType]?.abort();
+      lastRequestedQueryRef.current[searchType] = "";
+      setSearchState((current) => {
+        const panel = current[searchType];
+
+        if (!panel.results.length && !panel.searching && !panel.hasSearched) {
+          return current;
+        }
+
+        return {
+          ...current,
+          [searchType]: {
+            ...panel,
+            results: [],
+            searching: false,
+            hasSearched: false,
+          },
+        };
+      });
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void performSearch(searchType, query);
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [performSearch, query, searchType]);
+
+  useEffect(() => {
+    const abortControllers = searchAbortRef.current;
+
+    return () => {
+      abortControllers.song?.abort();
+      abortControllers.album?.abort();
+    };
+  }, []);
+
   async function submitSearch(event?: FormEvent) {
     event?.preventDefault();
 
     if (query.trim().length < 2) {
-      setError("Search for at least two characters.");
+      setSearchState((current) => ({
+        ...current,
+        [searchType]: {
+          ...current[searchType],
+          error: "Search for at least two characters.",
+        },
+      }));
       return;
     }
 
-    setSearching(true);
-    setError(null);
-    setDetail({ type: "idle" });
-    setSelectedId(null);
+    await performSearch(searchType, query, {
+      force: Boolean(currentSearch.error),
+    });
+  }
 
-    try {
-      const response = await fetch(
-        `/api/search?type=${searchType}&q=${encodeURIComponent(query.trim())}`
-      );
-      const payload = await parseResponse<{ results: SearchResult[] }>(response);
-      setResults(payload.results);
-    } catch (requestError) {
-      setResults([]);
-      setError(publicMessage(requestError));
-    } finally {
-      setSearching(false);
-    }
+  function updateQuery(event: ChangeEvent<HTMLInputElement>) {
+    const nextQuery = event.target.value;
+
+    setSearchState((current) => ({
+      ...current,
+      [searchType]: {
+        ...current[searchType],
+        query: nextQuery,
+        error: null,
+      },
+    }));
+    setSelectedKey(null);
+    setDetail({ type: "idle" });
   }
 
   async function openResult(result: SearchResult) {
-    setSelectedId(result.id);
+    setSelectedKey(resultIdentity(result));
     setFilter("verified-accepted");
-    setError(null);
     setLoadingMessage(
       result.type === "album"
         ? "Resolving tracks and loading Genius references"
@@ -196,7 +406,7 @@ export function ReferenceExplorer() {
                       : "e.g. Scorpion"
                   }
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={updateQuery}
                 />
               </label>
               <button
@@ -214,7 +424,9 @@ export function ReferenceExplorer() {
             </div>
           </form>
 
-          {error ? <InlineError message={error} /> : null}
+          {currentSearch.error ? (
+            <InlineError message={currentSearch.error} />
+          ) : null}
         </div>
 
         <div className="px-3 py-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
@@ -230,15 +442,15 @@ export function ReferenceExplorer() {
               results.map((result, index) => (
                 <SearchResultButton
                   key={`${result.type}-${result.id}-${index}`}
-                  active={selectedId === result.id}
+                  active={selectedKey === resultIdentity(result)}
                   result={result}
                   onClick={() => openResult(result)}
                 />
               ))
             ) : (
-              <EmptyPanel
-                title="No search yet"
-                body="Search for a song or album to begin."
+              <SearchEmptyState
+                hasSearched={currentSearch.hasSearched}
+                query={query}
               />
             )}
           </div>
@@ -385,7 +597,7 @@ function ReferenceWorkspace({
               </a>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <span className="inline-flex min-w-[8.75rem] items-center justify-center gap-1 rounded-full bg-[#ffca98]/30 px-3 py-1 text-xs font-semibold text-[#7a532a]">
+              <span className="inline-flex h-6 min-w-[8.75rem] items-center justify-center gap-1 rounded-full bg-[#ffca98]/30 px-3 text-xs font-semibold text-[#7a532a]">
                 <Sparkles className="size-3.5" />
                 {totalReferences} references
               </span>
@@ -699,7 +911,7 @@ function WorkspaceLoading({
               </a>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <span className="inline-flex min-w-[8.75rem] items-center justify-center gap-1 rounded-full bg-[#ffca98]/30 px-3 py-1 text-xs font-semibold text-[#7a532a]">
+              <span className="inline-flex h-6 min-w-[8.75rem] items-center justify-center gap-1 rounded-full bg-[#ffca98]/30 px-3 text-xs font-semibold text-[#7a532a]">
                 <Sparkles className="size-3.5" />
                 <span className="sr-only">{message}</span>
                 <span className="h-3 w-24 animate-pulse rounded bg-[#d59a65]/35" />
@@ -830,6 +1042,36 @@ function EmptyPanel({ title, body }: { title: string; body: string }) {
   );
 }
 
+function SearchEmptyState({
+  hasSearched,
+  query,
+}: {
+  hasSearched: boolean;
+  query: string;
+}) {
+  const trimmedQuery = query.trim();
+
+  if (trimmedQuery.length > 0 && trimmedQuery.length < 2) {
+    return (
+      <EmptyPanel
+        title="Keep typing"
+        body="Search starts after two characters."
+      />
+    );
+  }
+
+  if (hasSearched) {
+    return <EmptyPanel title="No results" body="Try another search." />;
+  }
+
+  return (
+    <EmptyPanel
+      title="No search yet"
+      body="Start typing to search songs or albums."
+    />
+  );
+}
+
 function InlineError({ message }: { message: string }) {
   return (
     <div className="mt-3 flex items-start gap-2 rounded border border-[#ba1a1a]/30 bg-[#ffdad6]/40 p-3 text-sm text-[#93000a]">
@@ -901,6 +1143,14 @@ function isAcceptedReference(reference: Reference) {
     reference.classification === "accepted" ||
     reference.categories.includes("verified-accepted")
   );
+}
+
+function resultIdentity(result: SearchResult) {
+  return `${result.type}:${result.id}`;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 function categoryLabel(category: ReferenceCategory) {
