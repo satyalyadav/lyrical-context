@@ -6,9 +6,13 @@ const FEATURE_PATTERN =
   /\s*(?:\(|\[)?(?:feat\.?|ft\.?|with)\s+[^)\]]+(?:\)|\])?/gi;
 
 const VERSION_PATTERN =
-  /\s*(?:\(|\[)(?:clean|explicit|remaster(?:ed)?|radio edit|album version|bonus track|deluxe|single version)[^)\]]*(?:\)|\])/gi;
+  /\s*(?:\(|\[)(?:clean|explicit|edit(?:ed)?|remaster(?:ed)?|radio edit|album edit|album version|bonus track|deluxe|single version)[^)\]]*(?:\)|\])/gi;
 
 const NON_WORD_PATTERN = /[^\p{L}\p{N}\s]/gu;
+
+const TITLE_ALIAS_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\bb['’]?s\b/gi, "bitches"],
+];
 
 const DISS_TERMS = [
   "beef",
@@ -132,11 +136,12 @@ export function truncateText(value: string, maxLength: number) {
 
 export function normalizeTitle(value: string) {
   return compactWhitespace(
-    value
-      .toLocaleLowerCase()
-      .replace(FEATURE_PATTERN, "")
-      .replace(VERSION_PATTERN, "")
-      .replace(NON_WORD_PATTERN, " ")
+    applyTitleAliases(
+      value
+        .toLocaleLowerCase()
+        .replace(FEATURE_PATTERN, "")
+        .replace(VERSION_PATTERN, "")
+    ).replace(NON_WORD_PATTERN, " ")
   );
 }
 
@@ -181,4 +186,11 @@ export function detectReferenceCategories(input: {
 
 function hasLikelyNameOrPlace(value: string) {
   return /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/.test(value);
+}
+
+function applyTitleAliases(value: string) {
+  return TITLE_ALIAS_REPLACEMENTS.reduce(
+    (current, [pattern, replacement]) => current.replace(pattern, replacement),
+    value
+  );
 }

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -57,16 +57,20 @@ describe("ReferenceExplorer", () => {
     render(<ReferenceExplorer />);
 
     await userEvent.type(
-      screen.getByPlaceholderText("e.g. Drake God's Plan"),
+      screen.getByPlaceholderText("e.g. God's Plan"),
       "drake gods plan"
     );
     await userEvent.click(screen.getByRole("button", { name: "Search" }));
 
-    await screen.findByText("God's Plan");
-    await userEvent.click(screen.getByRole("button", { name: /God's Plan/i }));
+    const resultButton = await screen.findByRole("button", {
+      name: /God's Plan/i,
+    });
+    expect(within(resultButton).queryByText("song")).not.toBeInTheDocument();
+    await userEvent.click(resultButton);
 
     expect(await screen.findByText("I finessed down Weston Road")).toBeVisible();
     expect(screen.getByText("A reference to a Toronto street.")).toBeVisible();
+    expect(screen.queryByText("Source: Genius")).not.toBeInTheDocument();
   });
 
   it("surfaces setup errors from the API", async () => {
@@ -87,7 +91,7 @@ describe("ReferenceExplorer", () => {
 
     render(<ReferenceExplorer />);
     await userEvent.type(
-      screen.getByPlaceholderText("e.g. Drake God's Plan"),
+      screen.getByPlaceholderText("e.g. God's Plan"),
       "drake"
     );
     await userEvent.click(screen.getByRole("button", { name: "Search" }));
@@ -97,12 +101,163 @@ describe("ReferenceExplorer", () => {
     ).toBeVisible();
   });
 
+  it("shows a skeleton workspace while references load", async () => {
+    let resolveReferences:
+      | ((response: Response | PromiseLike<Response>) => void)
+      | undefined;
+    const pendingReferences = new Promise<Response>((resolve) => {
+      resolveReferences = resolve;
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              type: "song",
+              id: "3315890",
+              title: "God's Plan",
+              artist: "Drake",
+              artworkUrl: null,
+              sourceUrl: "https://genius.com/song",
+              metadata: { geniusId: 3315890 },
+            },
+          ],
+        })
+      )
+      .mockReturnValueOnce(pendingReferences);
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReferenceExplorer />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText("e.g. God's Plan"),
+      "drake gods plan"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByText("God's Plan");
+
+    await userEvent.click(screen.getByRole("button", { name: /God's Plan/i }));
+
+    expect(await screen.findByText("Loading Genius references")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Source/i })).toBeVisible();
+    expect(screen.getByText("Accepted")).toBeVisible();
+    expect(screen.getByText("Unverified")).toBeVisible();
+    expect(screen.queryByText("Loading")).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+
+    resolveReferences?.(
+      jsonResponse({
+        song: {
+          type: "song",
+          id: "3315890",
+          title: "God's Plan",
+          artist: "Drake",
+          artworkUrl: null,
+          sourceUrl: "https://genius.com/song",
+          metadata: { geniusId: 3315890 },
+        },
+        references: [],
+        source: "live",
+      })
+    );
+    expect(await screen.findByText("No references yet")).toBeVisible();
+  });
+
+  it("renders duplicate Genius annotation ids without duplicate key warnings", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              type: "song",
+              id: "3315890",
+              title: "God's Plan",
+              artist: "Drake",
+              artworkUrl: null,
+              sourceUrl: "https://genius.com/song",
+              metadata: { geniusId: 3315890 },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          song: {
+            type: "song",
+            id: "3315890",
+            title: "God's Plan",
+            artist: "Drake",
+            artworkUrl: null,
+            sourceUrl: "https://genius.com/song",
+            metadata: { geniusId: 3315890 },
+          },
+          references: [
+            {
+              id: "8225487",
+              referentId: "referent-1",
+              fragment: "First duplicated fragment",
+              annotation: "First note.",
+              annotationHtml: null,
+              sourceUrl: "https://genius.com/annotation/1",
+              state: "accepted",
+              classification: "accepted",
+              verified: false,
+              votesTotal: 3,
+              categories: ["verified-accepted"],
+            },
+            {
+              id: "8225487",
+              referentId: "referent-2",
+              fragment: "Second duplicated fragment",
+              annotation: "Second note.",
+              annotationHtml: null,
+              sourceUrl: "https://genius.com/annotation/2",
+              state: "accepted",
+              classification: "accepted",
+              verified: false,
+              votesTotal: 5,
+              categories: ["verified-accepted"],
+            },
+          ],
+          source: "live",
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      render(<ReferenceExplorer />);
+
+      await userEvent.type(
+        screen.getByPlaceholderText("e.g. God's Plan"),
+        "drake gods plan"
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Search" }));
+      await screen.findByText("God's Plan");
+      await userEvent.click(screen.getByRole("button", { name: /God's Plan/i }));
+
+      expect(await screen.findByText("First duplicated fragment")).toBeVisible();
+      expect(screen.getByText("Second duplicated fragment")).toBeVisible();
+      expect(
+        consoleErrorSpy.mock.calls.some(([message]) =>
+          String(message).includes("same key")
+        )
+      ).toBe(false);
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
   it("switches to album search", async () => {
     render(<ReferenceExplorer />);
 
     await userEvent.click(screen.getByRole("button", { name: "Album" }));
 
-    expect(screen.getByPlaceholderText("e.g. Drake Scorpion")).toBeVisible();
+    expect(screen.getByPlaceholderText("e.g. Scorpion")).toBeVisible();
   });
 
   it("keeps album track references collapsed until a track is opened", async () => {
@@ -211,7 +366,7 @@ describe("ReferenceExplorer", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Album" }));
     await userEvent.type(
-      screen.getByPlaceholderText("e.g. Drake Scorpion"),
+      screen.getByPlaceholderText("e.g. Scorpion"),
       "scorpion"
     );
     await userEvent.click(screen.getByRole("button", { name: "Search" }));

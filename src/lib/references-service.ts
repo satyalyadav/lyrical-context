@@ -8,6 +8,7 @@ import {
 } from "@/lib/genius";
 import { getITunesAlbumTracks, searchITunesAlbums } from "@/lib/itunes";
 import { pickBestSongMatch } from "@/lib/matching";
+import { normalizeTitle } from "@/lib/text";
 import type {
   AlbumReferenceResponse,
   SearchResult,
@@ -17,6 +18,7 @@ import type {
 } from "@/lib/types";
 
 const TRACK_MATCH_TTL_SECONDS = 60 * 60 * 24;
+const TRACK_MATCH_CACHE_VERSION = 3;
 
 export async function search(type: SearchType, query: string) {
   const normalizedQuery = query.trim();
@@ -155,7 +157,7 @@ async function resolveTrackMatch(
   collectionId: string,
   track: Parameters<typeof pickBestSongMatch>[0]
 ) {
-  const cacheKey = `album-track-match:${collectionId}:${track.id}`;
+  const cacheKey = `album-track-match:v${TRACK_MATCH_CACHE_VERSION}:${collectionId}:${track.id}`;
   const cached = getCachedJson<ReturnType<typeof pickBestSongMatch>>(cacheKey);
 
   if (cached !== null) {
@@ -163,7 +165,7 @@ async function resolveTrackMatch(
   }
 
   const { value: candidates } = await searchGeniusSongs(
-    `${track.artist} ${track.title}`,
+    `${track.artist} ${normalizeTitle(track.title)}`,
     8
   );
   const match = pickBestSongMatch(track, candidates);

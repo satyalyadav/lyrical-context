@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 
-import { Progress } from "@/components/ui/progress";
 import type {
   AlbumReferenceResponse,
   ApiErrorBody,
@@ -30,7 +29,7 @@ import type {
   SongReferenceResponse,
 } from "@/lib/types";
 
-type ReferenceFilter = "all" | ReferenceCategory;
+type ReferenceFilter = "unverified" | ReferenceCategory;
 
 type DetailState =
   | { type: "idle" }
@@ -56,7 +55,7 @@ const FILTERS: Array<{
   { value: "diss", label: "Likely disses", icon: Target },
   { value: "names-places", label: "Names & places", icon: UserRoundSearch },
   { value: "sample-interpolation", label: "Samples", icon: Disc3 },
-  { value: "all", label: "All", icon: Sparkles },
+  { value: "unverified", label: "Unverified", icon: Sparkles },
 ];
 
 export function ReferenceExplorer() {
@@ -68,7 +67,7 @@ export function ReferenceExplorer() {
   const [loadingMessage, setLoadingMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<DetailState>({ type: "idle" });
-  const [filter, setFilter] = useState<ReferenceFilter>("all");
+  const [filter, setFilter] = useState<ReferenceFilter>("verified-accepted");
 
   const allReferences = useMemo(() => {
     if (detail.type === "song") {
@@ -123,7 +122,7 @@ export function ReferenceExplorer() {
 
   async function openResult(result: SearchResult) {
     setSelectedId(result.id);
-    setFilter("all");
+    setFilter("verified-accepted");
     setError(null);
     setLoadingMessage(
       result.type === "album"
@@ -193,8 +192,8 @@ export function ReferenceExplorer() {
                   className="h-10 w-full rounded-t border-0 border-b border-[#777770] bg-[#f0eee9] pl-9 pr-3 text-sm text-[#1b1c19] outline-none transition focus:border-[#181916] focus:ring-0"
                   placeholder={
                     searchType === "song"
-                      ? "e.g. Drake God's Plan"
-                      : "e.g. Drake Scorpion"
+                      ? "e.g. God's Plan"
+                      : "e.g. Scorpion"
                   }
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
@@ -228,9 +227,9 @@ export function ReferenceExplorer() {
                 <ResultSkeleton key={index} />
               ))
             ) : results.length > 0 ? (
-              results.map((result) => (
+              results.map((result, index) => (
                 <SearchResultButton
-                  key={`${result.type}-${result.id}`}
+                  key={`${result.type}-${result.id}-${index}`}
                   active={selectedId === result.id}
                   result={result}
                   onClick={() => openResult(result)}
@@ -324,16 +323,9 @@ function SearchResultButton({
           {result.artist}
         </div>
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        <span
-          className={`rounded border border-[#c8c7bf] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] ${
-            active ? "bg-[#fbf9f4]" : "text-[#777770]"
-          }`}
-        >
-          {result.type}
-        </span>
-        {year ? <span className="text-[11px] text-[#777770]">{year}</span> : null}
-      </div>
+      {year ? (
+        <span className="shrink-0 text-[11px] text-[#777770]">{year}</span>
+      ) : null}
     </button>
   );
 }
@@ -368,7 +360,7 @@ function ReferenceWorkspace({
   return (
     <div>
       <header className="sticky top-0 z-20 border-b border-[#c8c7bf]/70 bg-[#fbf9f4]/95 px-6 py-8 backdrop-blur">
-        <div className="mx-auto flex max-w-[680px] items-end gap-6">
+        <div className="mx-auto flex max-w-[1120px] items-end gap-6">
           <Artwork url={result.artworkUrl} title={result.title} size="lg" />
           <div className="min-w-0 flex-1 pb-1">
             <h2 className="[font-family:var(--font-newsreader)] text-4xl font-semibold leading-tight tracking-[-0.02em] text-[#181916] md:text-5xl">
@@ -393,12 +385,9 @@ function ReferenceWorkspace({
               </a>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#ffca98]/30 px-3 py-1 text-xs font-semibold text-[#7a532a]">
+              <span className="inline-flex min-w-[8.75rem] items-center justify-center gap-1 rounded-full bg-[#ffca98]/30 px-3 py-1 text-xs font-semibold text-[#7a532a]">
                 <Sparkles className="size-3.5" />
                 {totalReferences} references
-              </span>
-              <span className="rounded border border-[#c8c7bf] px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#777770]">
-                Source: Genius
               </span>
               {unmatchedTracks ? (
                 <span className="rounded border border-[#ba1a1a]/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#ba1a1a]">
@@ -409,7 +398,7 @@ function ReferenceWorkspace({
           </div>
         </div>
 
-        <div className="mx-auto mt-6 flex max-w-[680px] gap-2 overflow-x-auto pb-1">
+        <div className="mx-auto mt-6 flex max-w-[1120px] gap-2 overflow-x-auto pb-1">
           {FILTERS.map((item) => {
             const Icon = item.icon;
             const active = filter === item.value;
@@ -436,7 +425,7 @@ function ReferenceWorkspace({
       </header>
 
       <div className="px-6 py-6">
-        <div className="mx-auto max-w-[680px]">
+        <div className="mx-auto max-w-[1120px]">
           {detail.type === "song" ? (
             <ReferenceList references={filteredReferences} />
           ) : (
@@ -461,27 +450,27 @@ function AlbumTrackList({
   filter: ReferenceFilter;
   filteredReferences: Reference[];
 }) {
-  if (filteredReferences.length === 0 && filter !== "all") {
+  if (filteredReferences.length === 0) {
     return (
       <EmptyPanel
         title="No references match this filter"
-        body="Try All or another category."
+        body="Try another category."
       />
     );
   }
 
   return (
     <div className="space-y-0">
-      {data.tracks.map((group) => {
+      {data.tracks.map((group, index) => {
         const references = filterReferences(group.references, filter);
 
-        if (filter !== "all" && references.length === 0) {
+        if (references.length === 0) {
           return null;
         }
 
         return (
           <AlbumTrackDisclosure
-            key={group.track.id}
+            key={trackGroupKey(group, index)}
             group={group}
             references={references}
           />
@@ -529,11 +518,14 @@ function AlbumTrackDisclosure({
       {expanded ? (
         <div
           id={panelId}
-          className="ml-7 mt-4 space-y-4 border-l-2 border-[#7d562d]/25 pl-5"
+          className="ml-7 mt-4 grid gap-4 border-l-2 border-[#7d562d]/25 pl-5 xl:grid-cols-2"
         >
           {references.length ? (
-            references.map((reference) => (
-              <ReferenceCard key={reference.id} reference={reference} />
+            references.map((reference, index) => (
+              <ReferenceCard
+                key={referenceKey(reference, index)}
+                reference={reference}
+              />
             ))
           ) : (
             <div className="rounded border border-dashed border-[#c8c7bf] bg-[#f5f3ee] p-4 text-sm text-[#777770]">
@@ -581,34 +573,32 @@ function ReferenceList({ references }: { references: Reference[] }) {
   }
 
   return (
-    <div className="space-y-4">
-      {references.map((reference) => (
-        <ReferenceCard key={reference.id} reference={reference} />
+    <div className="grid gap-4 xl:grid-cols-2">
+      {references.map((reference, index) => (
+        <ReferenceCard key={referenceKey(reference, index)} reference={reference} />
       ))}
     </div>
   );
 }
 
 function ReferenceCard({ reference }: { reference: Reference }) {
+  const visibleCategories = reference.categories.filter(
+    (category) => category !== "verified-accepted"
+  );
+
   return (
     <article className="relative overflow-hidden rounded border border-[#c8c7bf]/70 bg-white p-5 shadow-[0_4px_24px_rgba(0,0,0,0.03)]">
       <div className="absolute bottom-0 left-0 top-0 w-1 bg-[#7d562d]" />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          {reference.categories.length ? (
-            reference.categories.map((category) => (
-              <span
-                key={category}
-                className="inline-flex items-center rounded border border-[#c8c7bf] bg-[#f0eee9] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#474741]"
-              >
-                {categoryLabel(category)}
-              </span>
-            ))
-          ) : (
-            <span className="inline-flex items-center rounded border border-[#c8c7bf] bg-[#f0eee9] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#474741]">
-              reference
+          {visibleCategories.map((category, index) => (
+            <span
+              key={`${category}-${index}`}
+              className="inline-flex items-center rounded border border-[#c8c7bf] bg-[#f0eee9] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#474741]"
+            >
+              {categoryLabel(category)}
             </span>
-          )}
+          ))}
         </div>
         <a
           className="inline-flex items-center gap-1 text-xs font-semibold text-[#777770] transition hover:text-[#181916]"
@@ -661,11 +651,10 @@ function WorkspaceEmpty() {
           <Search className="size-5 text-[#7d562d]" />
         </div>
         <h2 className="[font-family:var(--font-newsreader)] text-3xl font-medium text-[#181916]">
-          Choose a search result
+          Search for a song or album
         </h2>
         <p className="mt-3 text-sm leading-6 text-[#777770]">
-          The reference workspace will show annotated fragments, Genius context,
-          source links, filters, and album track grouping.
+          Pick a result to view the references Genius has for it.
         </p>
       </div>
     </div>
@@ -679,20 +668,135 @@ function WorkspaceLoading({
   result: SearchResult;
   message: string;
 }) {
+  const isAlbum = result.type === "album";
+  const year = result.type === "album" ? result.metadata.releaseYear : null;
+
   return (
-    <div className="flex min-h-[60vh] items-center justify-center px-6 py-16 lg:h-screen">
-      <div className="w-full max-w-md rounded border border-[#c8c7bf] bg-white p-5">
-        <div className="flex items-center gap-3">
-          <Loader2 className="size-5 animate-spin text-[#7d562d]" />
-          <div>
-            <h2 className="font-semibold text-[#181916]">{result.title}</h2>
-            <p className="text-sm text-[#777770]">{message}</p>
+    <div aria-live="polite">
+      <header className="sticky top-0 z-20 border-b border-[#c8c7bf]/70 bg-[#fbf9f4]/95 px-6 py-8 backdrop-blur">
+        <div className="mx-auto flex max-w-[1120px] items-end gap-6">
+          <Artwork url={result.artworkUrl} title={result.title} size="lg" />
+          <div className="min-w-0 flex-1 pb-1">
+            <h2 className="[font-family:var(--font-newsreader)] text-4xl font-semibold leading-tight tracking-[-0.02em] text-[#181916] md:text-5xl">
+              {result.title}
+            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[#777770]">
+              <span>{result.artist}</span>
+              {year ? (
+                <>
+                  <span className="size-1 rounded-full bg-[#c8c7bf]" />
+                  <span>{year}</span>
+                </>
+              ) : null}
+              <a
+                className="ml-auto inline-flex items-center gap-1 rounded border border-[#c8c7bf] px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#474741] transition hover:border-[#181916] hover:text-[#181916]"
+                href={result.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Source
+                <ArrowUpRight className="size-3.5" />
+              </a>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="inline-flex min-w-[8.75rem] items-center justify-center gap-1 rounded-full bg-[#ffca98]/30 px-3 py-1 text-xs font-semibold text-[#7a532a]">
+                <Sparkles className="size-3.5" />
+                <span className="sr-only">{message}</span>
+                <span className="h-3 w-24 animate-pulse rounded bg-[#d59a65]/35" />
+              </span>
+            </div>
           </div>
         </div>
-        <Progress className="mt-5" value={66} />
+
+        <LoadingFilterPills />
+      </header>
+
+      <div className="px-6 py-6">
+        <div className="mx-auto grid max-w-[1120px] gap-4 xl:grid-cols-2">
+          {Array.from({ length: isAlbum ? 6 : 4 }).map((_, index) => (
+            <LoadingReferenceSkeleton key={index} compact={index > 1} />
+          ))}
+        </div>
       </div>
     </div>
   );
+}
+
+function LoadingFilterPills() {
+  return (
+    <div className="mx-auto mt-6 flex max-w-[1120px] gap-2 overflow-x-auto pb-1">
+      {FILTERS.map((item) => {
+        const Icon = item.icon;
+        const active = item.value === "verified-accepted";
+
+        return (
+          <div
+            key={item.value}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+              active
+                ? "border-[#181916] bg-[#181916] text-white"
+                : "border-[#c8c7bf] bg-[#f0eee9] text-[#474741]"
+            }`}
+          >
+            <Icon className="size-3.5" />
+            {item.label}
+            <span
+              className={`h-3 w-4 animate-pulse rounded ${
+                active ? "bg-white/35" : "bg-[#d8d6cf]"
+              }`}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function LoadingReferenceSkeleton({ compact }: { compact: boolean }) {
+  return (
+    <div className="rounded border border-[#c8c7bf]/70 bg-white p-5 shadow-[0_4px_24px_rgba(0,0,0,0.03)]">
+      <div className="flex items-center justify-between gap-3">
+        <div className="h-6 w-24 animate-pulse rounded border border-[#c8c7bf] bg-[#f0eee9]" />
+        <div className="h-4 w-14 animate-pulse rounded bg-[#e4e2dd]" />
+      </div>
+      <div className="mt-5 border-l-2 border-[#c8c7bf] pl-4">
+        <div className="h-4 w-11/12 animate-pulse rounded bg-[#e4e2dd]" />
+        <div className="mt-3 h-4 w-7/12 animate-pulse rounded bg-[#e4e2dd]" />
+      </div>
+      <div className="mt-6 space-y-3">
+        <div className="h-3 w-full animate-pulse rounded bg-[#f0eee9]" />
+        <div className="h-3 w-10/12 animate-pulse rounded bg-[#f0eee9]" />
+        <div className="h-3 w-9/12 animate-pulse rounded bg-[#f0eee9]" />
+        {!compact ? (
+          <div className="h-3 w-2/3 animate-pulse rounded bg-[#f0eee9]" />
+        ) : null}
+      </div>
+      <div className="mt-5 border-t border-[#c8c7bf]/70 pt-3">
+        <div className="h-3 w-28 animate-pulse rounded bg-[#e4e2dd]" />
+      </div>
+    </div>
+  );
+}
+
+function trackGroupKey(
+  group: AlbumReferenceResponse["tracks"][number],
+  index: number
+) {
+  return [
+    group.track.id,
+    group.track.discNumber ?? 0,
+    group.track.trackNumber ?? index,
+    index,
+  ].join("-");
+}
+
+function referenceKey(reference: Reference, index: number) {
+  return [
+    reference.id,
+    reference.referentId,
+    reference.fragment.slice(0, 24),
+    index,
+  ].join("-");
 }
 
 function WorkspaceError({
@@ -776,11 +880,27 @@ function Artwork({
 }
 
 function filterReferences(references: Reference[], filter: ReferenceFilter) {
-  if (filter === "all") {
-    return references;
+  if (filter === "unverified") {
+    return references.filter((reference) => !isAcceptedReference(reference));
   }
 
-  return references.filter((reference) => reference.categories.includes(filter));
+  if (filter === "verified-accepted") {
+    return references.filter(isAcceptedReference);
+  }
+
+  return references.filter(
+    (reference) =>
+      isAcceptedReference(reference) && reference.categories.includes(filter)
+  );
+}
+
+function isAcceptedReference(reference: Reference) {
+  return (
+    reference.verified ||
+    reference.state === "accepted" ||
+    reference.classification === "accepted" ||
+    reference.categories.includes("verified-accepted")
+  );
 }
 
 function categoryLabel(category: ReferenceCategory) {

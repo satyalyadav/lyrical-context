@@ -14,6 +14,13 @@ describe("text utilities", () => {
     );
   });
 
+  it("normalizes edited and abbreviated clean title variants", () => {
+    expect(normalizeTitle("You Had Me, You Lost Me (Edited)")).toBe(
+      "you had me you lost me"
+    );
+    expect(normalizeTitle("Gangsta B's")).toBe("gangsta bitches");
+  });
+
   it("strips simple Genius HTML bodies to readable text", () => {
     expect(stripHtml("<p>Line one<br>Line two &amp; three</p>")).toBe(
       "Line one Line two & three"
