@@ -9,13 +9,14 @@ import {
   BadgeCheck,
   ChevronDown,
   ChevronRight,
+  CircleQuestionMark,
   Disc3,
   Loader2,
   Music2,
   Search,
-  Sparkles,
   Target,
   UserRoundSearch,
+  type LucideIcon,
 } from "lucide-react";
 import {
   ChangeEvent,
@@ -65,13 +66,13 @@ type DetailState =
 const FILTERS: Array<{
   value: ReferenceFilter;
   label: string;
-  icon: typeof Sparkles;
+  icon: LucideIcon;
 }> = [
   { value: "verified-accepted", label: "Accepted", icon: BadgeCheck },
   { value: "diss", label: "Likely disses", icon: Target },
   { value: "names-places", label: "Names & places", icon: UserRoundSearch },
   { value: "sample-interpolation", label: "Samples", icon: Disc3 },
-  { value: "unverified", label: "Unverified", icon: Sparkles },
+  { value: "unverified", label: "Unverified", icon: CircleQuestionMark },
 ];
 
 const SEARCH_DEBOUNCE_MS = 350;
@@ -563,18 +564,10 @@ function ReferenceWorkspace({
           (total, track) => total + track.references.length,
           0
         );
-  const unmatchedTracks =
-    detail.type === "album"
-      ? detail.data.tracks.filter((track) => track.matchStatus !== "matched").length
-      : 0;
-  const matchedTracks =
-    detail.type === "album"
-      ? detail.data.tracks.filter((track) => track.matchStatus === "matched").length
-      : 0;
   const metadataItems = [
     result.artist,
     result.metadata.releaseYear ?? null,
-    `${totalReferences} annotations`,
+    formatReferenceCount(totalReferences),
     ...(detail.type === "song"
       ? [
           detail.data.song.metadata.albumTitle
@@ -590,15 +583,8 @@ function ReferenceWorkspace({
           detail.data.album.metadata.trackCount
             ? `${detail.data.album.metadata.trackCount} tracks`
             : `${detail.data.tracks.length} tracks`,
-          `${matchedTracks}/${detail.data.tracks.length} matched`,
         ]),
   ].filter((item): item is string => Boolean(item));
-  const issueItems =
-    detail.type === "song"
-      ? []
-      : unmatchedTracks
-        ? [`${unmatchedTracks} track issues`]
-        : [];
 
   return (
     <div>
@@ -609,9 +595,8 @@ function ReferenceWorkspace({
             <h2 className="[font-family:var(--font-newsreader)] text-2xl font-semibold leading-8 text-[#181916] md:text-3xl md:leading-9">
               {result.title}
             </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[#777770]">
+            <div className="mt-2 flex min-h-[3.25rem] flex-wrap items-start gap-x-2 gap-y-1 text-sm leading-6 text-[#777770] md:min-h-6 md:items-center">
               <MetadataItems items={metadataItems} />
-              <MetadataItems className="text-[#ba1a1a]" items={issueItems} />
               <a
                 className="inline-flex items-center gap-1 rounded border border-[#c8c7bf] px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#474741] transition hover:border-[#181916] hover:text-[#181916] md:ml-auto"
                 href={result.sourceUrl}
@@ -678,12 +663,18 @@ function AlbumTrackList({
   filteredReferences: Reference[];
 }) {
   if (filteredReferences.length === 0) {
-    return (
-      <EmptyPanel
-        title="No references match this filter"
-        body="Try another category."
-      />
+    const hasMissingTracks = data.tracks.some(
+      (group) => group.matchStatus !== "matched"
     );
+
+    if (!hasMissingTracks) {
+      return (
+        <EmptyPanel
+          title="No references match this filter"
+          body="Try another category."
+        />
+      );
+    }
   }
 
   return (
@@ -691,7 +682,7 @@ function AlbumTrackList({
       {data.tracks.map((group, index) => {
         const references = filterReferences(group.references, filter);
 
-        if (references.length === 0) {
+        if (references.length === 0 && group.matchStatus === "matched") {
           return null;
         }
 
@@ -784,7 +775,7 @@ function TrackStatus({
 
   return (
     <span className="shrink-0 rounded-full bg-[#ffdad6] px-2 py-1 text-xs font-semibold text-[#93000a]">
-      {group.matchStatus}
+      missing
     </span>
   );
 }
@@ -899,7 +890,7 @@ function WorkspaceLoading({
   const metadataItems = [
     result.artist,
     result.type === "album" ? result.metadata.releaseYear : null,
-    "Loading annotations",
+    "Loading references",
     ...(result.type === "album" && result.metadata.trackCount
       ? [`${result.metadata.trackCount} tracks`]
       : []),
@@ -918,7 +909,7 @@ function WorkspaceLoading({
             <h2 className="[font-family:var(--font-newsreader)] text-2xl font-semibold leading-8 text-[#181916] md:text-3xl md:leading-9">
               {result.title}
             </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[#777770]">
+            <div className="mt-2 flex min-h-[3.25rem] flex-wrap items-start gap-x-2 gap-y-1 text-sm leading-6 text-[#777770] md:min-h-6 md:items-center">
               <MetadataItems items={metadataItems} />
               {loadingItem ? <span className="sr-only">{loadingItem}</span> : null}
               <a
@@ -950,7 +941,7 @@ function WorkspaceLoading({
 
 function LoadingFilterPills() {
   return (
-    <div className="mx-auto mt-6 flex max-w-[1120px] gap-2 overflow-x-auto pb-1">
+    <div className="mx-auto mt-3 flex max-w-[1120px] gap-2 overflow-x-auto pb-1">
       {FILTERS.map((item) => {
         const Icon = item.icon;
         const active = item.value === "verified-accepted";
@@ -1053,6 +1044,10 @@ function formatArtistList(artists: string[]) {
   return hiddenArtistCount > 0
     ? `${visibleArtists} +${hiddenArtistCount}`
     : visibleArtists;
+}
+
+function formatReferenceCount(count: number) {
+  return `${count} ${count === 1 ? "reference" : "references"}`;
 }
 
 function WorkspaceError({

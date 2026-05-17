@@ -141,7 +141,7 @@ describe("ReferenceExplorer", () => {
     );
 
     expect(await screen.findByText("2018")).toBeVisible();
-    expect(screen.getByText("1 annotations")).toBeVisible();
+    expect(screen.getByText("1 reference")).toBeVisible();
     expect(screen.getByText("Album: ASTROWORLD")).toBeVisible();
     expect(screen.getByText("Feat. Drake")).toBeVisible();
   });
@@ -539,7 +539,7 @@ describe("ReferenceExplorer", () => {
               sourceUrl: "https://music.apple.com/album",
               metadata: {
                 collectionId: 1406109769,
-                trackCount: 2,
+                trackCount: 3,
                 releaseYear: "2018",
               },
             },
@@ -557,7 +557,7 @@ describe("ReferenceExplorer", () => {
             sourceUrl: "https://music.apple.com/album",
             metadata: {
               collectionId: 1406109769,
-              trackCount: 2,
+              trackCount: 3,
               releaseYear: "2018",
             },
           },
@@ -622,6 +622,21 @@ describe("ReferenceExplorer", () => {
               ],
               error: null,
             },
+            {
+              track: {
+                id: "3",
+                title: "Missing Track",
+                artist: "Drake",
+                trackNumber: 3,
+                discNumber: 1,
+                explicitness: "explicit",
+              },
+              matchStatus: "unmatched",
+              matchConfidence: null,
+              matchedSong: null,
+              references: [],
+              error: "No confident Genius match found.",
+            },
           ],
           source: "live",
         })
@@ -642,8 +657,9 @@ describe("ReferenceExplorer", () => {
 
     await screen.findByRole("button", { name: /First Track/i });
     expect(screen.getAllByText("2018").length).toBeGreaterThan(0);
-    expect(screen.getByText("2 tracks")).toBeVisible();
-    expect(screen.getByText("2/2 matched")).toBeVisible();
+    expect(screen.getByText("3 tracks")).toBeVisible();
+    expect(screen.getByRole("button", { name: /Missing Track/i })).toBeVisible();
+    expect(screen.getByText("missing")).toBeVisible();
     expect(screen.queryByText("A hidden line")).not.toBeInTheDocument();
     expect(screen.queryByText("Another hidden line")).not.toBeInTheDocument();
 
