@@ -135,10 +135,9 @@ export async function searchGeniusSongs(query: string, limit = 12) {
     );
 
     return (payload.response?.hits ?? [])
-      .map((hit) => hit.result)
-      .filter(Boolean)
+      .flatMap((hit) => (hit.result ? [hit.result] : []))
       .slice(0, limit)
-      .map((song) => normalizeGeniusSong(song as GeniusSong));
+      .map((song) => normalizeGeniusSong(song));
   });
 }
 
@@ -195,21 +194,40 @@ async function fetchGeniusReferents(songId: string) {
     )
   );
 
-  for (const result of remainingResults) {
-    const pageResult = await result;
-
-    if (pageResult.status === "rejected") {
-      throw pageResult.reason;
-    }
-
-    referents.push(...pageResult.value);
-
-    if (pageResult.value.length < REFERENTS_PER_PAGE) {
-      break;
-    }
-  }
+  await collectGeniusReferentPages(remainingResults, referents);
 
   return referents;
+}
+
+async function collectGeniusReferentPages(
+  pageResults: Array<
+    Promise<
+      | { status: "fulfilled"; value: GeniusReferent[] }
+      | { status: "rejected"; reason: unknown }
+    >
+  >,
+  referents: GeniusReferent[],
+  pageIndex = 0
+): Promise<void> {
+  const pageResult = pageResults[pageIndex];
+
+  if (!pageResult) {
+    return;
+  }
+
+  const result = await pageResult;
+
+  if (result.status === "rejected") {
+    throw result.reason;
+  }
+
+  referents.push(...result.value);
+
+  if (result.value.length < REFERENTS_PER_PAGE) {
+    return;
+  }
+
+  return collectGeniusReferentPages(pageResults, referents, pageIndex + 1);
 }
 
 async function fetchGeniusReferentPage(songId: string, page: number) {
@@ -255,9 +273,9 @@ export function normalizeGeniusSong(song: GeniusSong): SongSearchResult {
       geniusId: song.id,
       releaseYear: extractReleaseYear(song.release_date_for_display),
       albumTitle: song.album?.name ?? null,
-      featuredArtists: (song.featured_artists ?? [])
-        .map((artist) => artist.name)
-        .filter((name): name is string => Boolean(name)),
+      featuredArtists: (song.featured_artists ?? []).flatMap((artist) =>
+        artist.name ? [artist.name] : []
+      ),
     },
   };
 }
@@ -273,48 +291,49 @@ export function normalizeReferent(
   const fragment = truncateText(referent.fragment ?? "Annotated lyric fragment", 360);
 
   return (referent.annotations ?? [])
-    .map((annotation, annotationIndex) => {
+    .flatMap((annotation, annotationIndex) => {
       const bodyPlain =
         annotation.body?.plain ??
         (annotation.body?.html ? stripHtml(annotation.body.html) : "");
       const annotationText = truncateText(bodyPlain, 900);
 
       if (!annotationText) {
-        return null;
+        return [];
       }
 
       const state = annotation.state ?? null;
       const classification = referent.classification ?? null;
       const verified = Boolean(annotation.verified);
 
-      return {
-        id: String(annotation.id),
-        referentId: String(referent.id),
-        sortIndex: referentSortIndex + annotationIndex,
-        fragment,
-        annotation: annotationText,
-        annotationHtml: annotation.body?.html
-          ? sanitizeAnnotationHtml(annotation.body.html)
-          : null,
-        sourceUrl: annotation.url ?? referent.url ?? "https://genius.com",
-        state,
-        classification,
-        verified,
-        votesTotal: annotation.votes_total ?? null,
-        categories: detectReferenceCategories({
+      return [
+        {
+          id: String(annotation.id),
+          referentId: String(referent.id),
+          sortIndex: referentSortIndex + annotationIndex,
           fragment,
           annotation: annotationText,
-          verified,
+          annotationHtml: annotation.body?.html
+            ? sanitizeAnnotationHtml(annotation.body.html)
+            : null,
+          sourceUrl: annotation.url ?? referent.url ?? "https://genius.com",
           state,
           classification,
-        }),
-      } satisfies Reference;
-    })
-    .filter((reference): reference is Reference => Boolean(reference));
+          verified,
+          votesTotal: annotation.votes_total ?? null,
+          categories: detectReferenceCategories({
+            fragment,
+            annotation: annotationText,
+            verified,
+            state,
+            classification,
+          }),
+        } satisfies Reference,
+      ];
+    });
 }
 
 function sortReferencesChronologically(references: Reference[]) {
-  return [...references].sort((first, second) => first.sortIndex - second.sortIndex);
+  return references.toSorted((first, second) => first.sortIndex - second.sortIndex);
 }
 
 async function resolveReferentLyricPositions(
@@ -352,6 +371,24 @@ async function resolveReferentLyricPositions(
   const primaryLyricSet = lyricPositionSets.reduce((best, current) =>
     current.positions.size > best.positions.size ? current : best
   );
+  const fallbackPositions = new Map<number, number>();
+
+  for (const lyricSet of lyricPositionSets) {
+    if (lyricSet === primaryLyricSet) {
+      continue;
+    }
+
+    for (const [referentId, fallbackPosition] of lyricSet.positions) {
+      if (fallbackPositions.has(referentId)) {
+        continue;
+      }
+
+      fallbackPositions.set(
+        referentId,
+        projectLyricPosition(fallbackPosition, lyricSet, primaryLyricSet)
+      );
+    }
+  }
 
   for (const referent of referents) {
     const primaryPosition = primaryLyricSet.positions.get(referent.id);
@@ -361,21 +398,10 @@ async function resolveReferentLyricPositions(
       continue;
     }
 
-    const fallbackSet = lyricPositionSets.find((lyricSet) =>
-      lyricSet.positions.has(referent.id)
-    );
-
-    if (!fallbackSet) {
-      continue;
-    }
-
-    const fallbackPosition = fallbackSet.positions.get(referent.id);
+    const fallbackPosition = fallbackPositions.get(referent.id);
 
     if (fallbackPosition !== undefined) {
-      positions.set(
-        referent.id,
-        projectLyricPosition(fallbackPosition, fallbackSet, primaryLyricSet)
-      );
+      positions.set(referent.id, fallbackPosition);
     }
   }
 
@@ -516,7 +542,10 @@ function findFragmentPositionInContext(
   const normalizedCandidates = getNormalizedFragmentPositionCandidates(fragment);
 
   for (const normalizedCandidate of normalizedCandidates) {
-    const position = searchContext.normalizedLyrics.indexOf(normalizedCandidate);
+    const position = findNormalizedLyricTextPosition(
+      searchContext.normalizedLyrics,
+      normalizedCandidate
+    );
 
     if (position !== -1) {
       return position;
@@ -532,6 +561,14 @@ function findFragmentPositionInContext(
   }
 
   return null;
+}
+
+function findNormalizedLyricTextPosition(lyrics: string, fragment: string) {
+  return lyrics.search(escapeRegExp(fragment));
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function findFuzzyFragmentPosition(
@@ -602,17 +639,26 @@ function getFuzzyCandidateWindowStarts(
   minWindowSize: number
 ) {
   const candidateAnchors = candidateTokens
-    .map((token, index) => ({
-      index,
-      looseValue: normalizeLooseLyricToken(token),
-    }))
-    .filter((token) => !isLowSignalLyricToken(token.looseValue))
-    .map((token) => ({
-      ...token,
-      lyricIndexes: searchContext.lyricTokenIndex.get(token.looseValue) ?? [],
-    }))
-    .filter((token) => token.lyricIndexes.length > 0)
-    .sort((first, second) => first.lyricIndexes.length - second.lyricIndexes.length)
+    .reduce<
+      Array<{ index: number; looseValue: string; lyricIndexes: number[] }>
+    >((anchors, token, index) => {
+      const looseValue = normalizeLooseLyricToken(token);
+
+      if (isLowSignalLyricToken(looseValue)) {
+        return anchors;
+      }
+
+      const lyricIndexes = searchContext.lyricTokenIndex.get(looseValue) ?? [];
+
+      if (lyricIndexes.length > 0) {
+        anchors.push({ index, looseValue, lyricIndexes });
+      }
+
+      return anchors;
+    }, [])
+    .toSorted(
+      (first, second) => first.lyricIndexes.length - second.lyricIndexes.length
+    )
     .slice(0, FUZZY_POSITION_MAX_ANCHOR_TOKENS);
   const starts = new Set<number>();
 
@@ -635,7 +681,7 @@ function getFuzzyCandidateWindowStarts(
     }
   }
 
-  return Array.from(starts).sort((first, second) => first - second);
+  return Array.from(starts).toSorted((first, second) => first - second);
 }
 
 type LyricToken = {
@@ -733,10 +779,15 @@ function projectLyricPosition(
 
 function getFragmentPositionCandidates(fragment: string) {
   const cleanedFragment = removeLyricSectionLabels(fragment);
-  const lines = cleanedFragment
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const lines = cleanedFragment.split(/\r?\n/).reduce<string[]>((items, line) => {
+    const trimmedLine = line.trim();
+
+    if (trimmedLine) {
+      items.push(trimmedLine);
+    }
+
+    return items;
+  }, []);
   const candidates = [cleanedFragment];
   const maxChunkSize = Math.min(
     lines.length,
@@ -753,9 +804,13 @@ function getFragmentPositionCandidates(fragment: string) {
 }
 
 function getNormalizedFragmentPositionCandidates(fragment: string) {
-  const normalizedCandidates = getFragmentPositionCandidates(fragment)
-    .map((candidate) => normalizeLyricsForPosition(candidate))
-    .filter(Boolean);
+  const normalizedCandidates = getFragmentPositionCandidates(fragment).flatMap(
+    (candidate) => {
+      const normalizedCandidate = normalizeLyricsForPosition(candidate);
+
+      return normalizedCandidate ? [normalizedCandidate] : [];
+    }
+  );
 
   return Array.from(
     new Set(normalizedCandidates.flatMap((candidate) => [

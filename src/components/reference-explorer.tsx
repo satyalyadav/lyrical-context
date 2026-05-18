@@ -1,7 +1,5 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
-
 import {
   Album,
   AlertCircle,
@@ -18,15 +16,17 @@ import {
   UserRoundSearch,
   type LucideIcon,
 } from "lucide-react";
+import Image from "next/image";
 import {
-  ChangeEvent,
-  FormEvent,
+  createElement,
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 
 import type {
   AlbumReferenceResponse,
@@ -94,14 +94,178 @@ const INITIAL_SEARCH_STATE: Record<SearchType, SearchPanelState> = {
   },
 };
 
+type ExplorerState = {
+  searchType: SearchType;
+  searchState: Record<SearchType, SearchPanelState>;
+  selectedKey: string | null;
+  loadingMessage: string;
+  detail: DetailState;
+  filter: ReferenceFilter;
+};
+
+type ExplorerAction =
+  | { type: "set-search-type"; searchType: SearchType }
+  | {
+      type: "patch-search-panel";
+      searchType: SearchType;
+      patch: Partial<SearchPanelState>;
+    }
+  | { type: "set-query"; searchType: SearchType; query: string }
+  | { type: "open-result-started"; result: SearchResult; message: string }
+  | { type: "set-detail"; detail: DetailState }
+  | { type: "set-loading-message"; message: string }
+  | { type: "set-filter"; filter: ReferenceFilter };
+
+const INITIAL_EXPLORER_STATE: ExplorerState = {
+  searchType: "song",
+  searchState: INITIAL_SEARCH_STATE,
+  selectedKey: null,
+  loadingMessage: "",
+  detail: { type: "idle" },
+  filter: "verified-accepted",
+};
+
+function explorerReducer(
+  state: ExplorerState,
+  action: ExplorerAction
+): ExplorerState {
+  switch (action.type) {
+    case "set-search-type":
+      return {
+        ...state,
+        searchType: action.searchType,
+      };
+    case "patch-search-panel":
+      return {
+        ...state,
+        searchState: {
+          ...state.searchState,
+          [action.searchType]: {
+            ...state.searchState[action.searchType],
+            ...action.patch,
+          },
+        },
+      };
+    case "set-query":
+      return {
+        ...state,
+        selectedKey: null,
+        detail: { type: "idle" },
+        searchState: {
+          ...state.searchState,
+          [action.searchType]: {
+            ...state.searchState[action.searchType],
+            query: action.query,
+            error: null,
+          },
+        },
+      };
+    case "open-result-started":
+      return {
+        ...state,
+        selectedKey: resultIdentity(action.result),
+        loadingMessage: action.message,
+        detail: { type: "loading", result: action.result },
+        filter: "verified-accepted",
+      };
+    case "set-detail":
+      return {
+        ...state,
+        detail: action.detail,
+      };
+    case "set-loading-message":
+      return {
+        ...state,
+        loadingMessage: action.message,
+      };
+    case "set-filter":
+      return {
+        ...state,
+        filter: action.filter,
+      };
+  }
+}
+
+const RESULT_SKELETON_KEYS = [
+  "result-skeleton-1",
+  "result-skeleton-2",
+  "result-skeleton-3",
+  "result-skeleton-4",
+  "result-skeleton-5",
+  "result-skeleton-6",
+];
+
+const SONG_LOADING_SKELETONS = [
+  { key: "song-loading-reference-1", compact: false },
+  { key: "song-loading-reference-2", compact: false },
+  { key: "song-loading-reference-3", compact: true },
+  { key: "song-loading-reference-4", compact: true },
+];
+
+const ALBUM_LOADING_SKELETONS = [
+  ...SONG_LOADING_SKELETONS,
+  { key: "album-loading-reference-5", compact: true },
+  { key: "album-loading-reference-6", compact: true },
+];
+
+const ANNOTATION_BODY_CLASS =
+  "mt-4 [font-family:var(--font-literata)] text-[15px] leading-7 text-[#474741] [&_a]:text-[#181916] [&_a]:underline [&_a]:decoration-[#7d562d]/70 [&_a]:underline-offset-4 [&_a:hover]:text-[#7d562d] [&_blockquote]:my-4 [&_blockquote]:border-l [&_blockquote]:border-[#c8c7bf] [&_blockquote]:pl-4 [&_blockquote]:text-[#181916] [&_figcaption]:mt-2 [&_figcaption]:text-center [&_figcaption]:text-xs [&_figcaption]:text-[#777770] [&_figure]:my-4 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_img]:mx-auto [&_img]:my-4 [&_img]:max-h-[420px] [&_img]:max-w-full [&_img]:rounded [&_img]:border [&_img]:border-[#c8c7bf]/70 [&_img]:object-contain [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_table]:my-4 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-[#c8c7bf] [&_td]:p-2 [&_th]:border [&_th]:border-[#c8c7bf] [&_th]:p-2 [&_ul]:list-disc";
+
+const SAFE_ANNOTATION_TAGS = new Set([
+  "a",
+  "b",
+  "blockquote",
+  "br",
+  "caption",
+  "cite",
+  "code",
+  "div",
+  "em",
+  "figcaption",
+  "figure",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "hr",
+  "i",
+  "li",
+  "ol",
+  "p",
+  "pre",
+  "s",
+  "small",
+  "span",
+  "strong",
+  "sub",
+  "sup",
+  "table",
+  "tbody",
+  "td",
+  "th",
+  "thead",
+  "tr",
+  "u",
+  "ul",
+]);
+
+const SAFE_VOID_ANNOTATION_TAGS = new Set(["br", "hr", "img"]);
+
+type SafeAnnotationNode =
+  | { type: "text"; key: string; text: string }
+  | {
+      type: "element";
+      key: string;
+      tag: string;
+      props: Record<string, string>;
+      children: SafeAnnotationNode[];
+    };
+
 export function ReferenceExplorer() {
-  const [searchType, setSearchType] = useState<SearchType>("song");
-  const [searchState, setSearchState] =
-    useState<Record<SearchType, SearchPanelState>>(INITIAL_SEARCH_STATE);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [loadingMessage, setLoadingMessage] = useState("");
-  const [detail, setDetail] = useState<DetailState>({ type: "idle" });
-  const [filter, setFilter] = useState<ReferenceFilter>("verified-accepted");
+  const [state, dispatch] = useReducer(
+    explorerReducer,
+    INITIAL_EXPLORER_STATE
+  );
   const searchAbortRef = useRef<Record<SearchType, AbortController | null>>({
     song: null,
     album: null,
@@ -114,10 +278,10 @@ export function ReferenceExplorer() {
     song: "",
     album: "",
   });
+  const { detail, filter, loadingMessage, searchState, searchType, selectedKey } =
+    state;
   const currentSearch = searchState[searchType];
   const query = currentSearch.query;
-  const results = currentSearch.results;
-  const searching = currentSearch.searching;
 
   const allReferences = useMemo(() => {
     if (detail.type === "song") {
@@ -154,28 +318,15 @@ export function ReferenceExplorer() {
       if (trimmedQuery.length < 2) {
         searchAbortRef.current[type]?.abort();
         lastRequestedQueryRef.current[type] = "";
-        setSearchState((current) => {
-          const panel = current[type];
-
-          if (
-            !panel.results.length &&
-            !panel.searching &&
-            !panel.error &&
-            !panel.hasSearched
-          ) {
-            return current;
-          }
-
-          return {
-            ...current,
-            [type]: {
-              ...panel,
-              results: [],
-              searching: false,
-              error: null,
-              hasSearched: false,
-            },
-          };
+        dispatch({
+          type: "patch-search-panel",
+          searchType: type,
+          patch: {
+            results: [],
+            searching: false,
+            error: null,
+            hasSearched: false,
+          },
         });
         return;
       }
@@ -195,15 +346,15 @@ export function ReferenceExplorer() {
       const controller = new AbortController();
       searchAbortRef.current[type] = controller;
 
-      setSearchState((current) => ({
-        ...current,
-        [type]: {
-          ...current[type],
+      dispatch({
+        type: "patch-search-panel",
+        searchType: type,
+        patch: {
           searching: true,
           error: null,
           hasSearched: true,
         },
-      }));
+      });
 
       try {
         const response = await fetch(
@@ -218,16 +369,16 @@ export function ReferenceExplorer() {
           return;
         }
 
-        setSearchState((current) => ({
-          ...current,
-          [type]: {
-            ...current[type],
+        dispatch({
+          type: "patch-search-panel",
+          searchType: type,
+          patch: {
             results: payload.results,
             searching: false,
             error: null,
             hasSearched: true,
           },
-        }));
+        });
       } catch (requestError) {
         if (isAbortError(requestError)) {
           return;
@@ -237,16 +388,16 @@ export function ReferenceExplorer() {
           return;
         }
 
-        setSearchState((current) => ({
-          ...current,
-          [type]: {
-            ...current[type],
+        dispatch({
+          type: "patch-search-panel",
+          searchType: type,
+          patch: {
             results: [],
             searching: false,
             error: publicMessage(requestError),
             hasSearched: true,
           },
-        }));
+        });
       } finally {
         if (searchRequestRef.current[type] === requestId) {
           searchAbortRef.current[type] = null;
@@ -262,22 +413,14 @@ export function ReferenceExplorer() {
     if (trimmedQuery.length < 2) {
       searchAbortRef.current[searchType]?.abort();
       lastRequestedQueryRef.current[searchType] = "";
-      setSearchState((current) => {
-        const panel = current[searchType];
-
-        if (!panel.results.length && !panel.searching && !panel.hasSearched) {
-          return current;
-        }
-
-        return {
-          ...current,
-          [searchType]: {
-            ...panel,
-            results: [],
-            searching: false,
-            hasSearched: false,
-          },
-        };
+      dispatch({
+        type: "patch-search-panel",
+        searchType,
+        patch: {
+          results: [],
+          searching: false,
+          hasSearched: false,
+        },
       });
       return;
     }
@@ -302,13 +445,13 @@ export function ReferenceExplorer() {
     event?.preventDefault();
 
     if (query.trim().length < 2) {
-      setSearchState((current) => ({
-        ...current,
-        [searchType]: {
-          ...current[searchType],
+      dispatch({
+        type: "patch-search-panel",
+        searchType,
+        patch: {
           error: "Search for at least two characters.",
         },
-      }));
+      });
       return;
     }
 
@@ -320,27 +463,18 @@ export function ReferenceExplorer() {
   function updateQuery(event: ChangeEvent<HTMLInputElement>) {
     const nextQuery = event.target.value;
 
-    setSearchState((current) => ({
-      ...current,
-      [searchType]: {
-        ...current[searchType],
-        query: nextQuery,
-        error: null,
-      },
-    }));
-    setSelectedKey(null);
-    setDetail({ type: "idle" });
+    dispatch({ type: "set-query", searchType, query: nextQuery });
   }
 
   async function openResult(result: SearchResult) {
-    setSelectedKey(resultIdentity(result));
-    setFilter("verified-accepted");
-    setLoadingMessage(
-      result.type === "album"
-        ? "Resolving tracks and loading Genius references"
-        : "Loading Genius references"
-    );
-    setDetail({ type: "loading", result });
+    dispatch({
+      type: "open-result-started",
+      result,
+      message:
+        result.type === "album"
+          ? "Resolving tracks and loading Genius references"
+          : "Loading Genius references",
+    });
 
     try {
       const endpoint =
@@ -356,126 +490,209 @@ export function ReferenceExplorer() {
 
       if (result.type === "song") {
         const data = await parseResponse<SongReferenceResponse>(response);
-        setDetail({ type: "song", result, data });
+        dispatch({ type: "set-detail", detail: { type: "song", result, data } });
       } else {
         const data = await parseResponse<AlbumReferenceResponse>(response);
-        setDetail({ type: "album", result, data });
+        dispatch({ type: "set-detail", detail: { type: "album", result, data } });
       }
     } catch (requestError) {
-      setDetail({
-        type: "error",
-        result,
-        message: publicMessage(requestError),
+      dispatch({
+        type: "set-detail",
+        detail: {
+          type: "error",
+          result,
+          message: publicMessage(requestError),
+        },
       });
     } finally {
-      setLoadingMessage("");
+      dispatch({ type: "set-loading-message", message: "" });
     }
   }
 
   return (
     <main className="min-h-screen bg-[#fbf9f4] text-[#1b1c19] lg:flex lg:h-screen lg:overflow-hidden">
-      <aside className="border-b border-[#c8c7bf] bg-[#f5f3ee] lg:flex lg:h-screen lg:w-80 lg:shrink-0 lg:flex-col lg:border-b-0 lg:border-r">
-        <div className="border-b border-[#c8c7bf] px-6 py-6">
-          <h1 className="mb-5 [font-family:var(--font-newsreader)] text-3xl font-medium italic tracking-tight text-[#181916]">
-            Lyrical Context
-          </h1>
-
-          <form className="space-y-3" onSubmit={submitSearch}>
-            <div className="flex rounded border border-[#c8c7bf] bg-[#e4e2dd] p-1">
-              <TypeButton
-                active={searchType === "song"}
-                icon={Music2}
-                label="Song"
-                onClick={() => setSearchType("song")}
-              />
-              <TypeButton
-                active={searchType === "album"}
-                icon={Album}
-                label="Album"
-                onClick={() => setSearchType("album")}
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <label className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#777770]" />
-                <input
-                  className="h-10 w-full rounded-t border-0 border-b border-[#777770] bg-[#f0eee9] pl-9 pr-3 text-sm text-[#1b1c19] outline-none transition focus:border-[#181916] focus:ring-0"
-                  placeholder={
-                    searchType === "song"
-                      ? "e.g. God's Plan"
-                      : "e.g. Scorpion"
-                  }
-                  value={query}
-                  onChange={updateQuery}
-                />
-              </label>
-              <button
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-[#181916] text-white transition hover:bg-[#2d2d2a] disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={searching}
-                type="submit"
-              >
-                {searching ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Search className="size-4" />
-                )}
-                <span className="sr-only">Search</span>
-              </button>
-            </div>
-          </form>
-
-          {currentSearch.error ? (
-            <InlineError message={currentSearch.error} />
-          ) : null}
-        </div>
-
-        <div className="px-3 py-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-          <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#777770]">
-            {query.trim() ? `Results for "${query.trim()}"` : "Results"}
-          </div>
-          <div className="space-y-1">
-            {searching ? (
-              Array.from({ length: 6 }).map((_, index) => (
-                <ResultSkeleton key={index} />
-              ))
-            ) : results.length > 0 ? (
-              results.map((result, index) => (
-                <SearchResultButton
-                  key={`${result.type}-${result.id}-${index}`}
-                  active={selectedKey === resultIdentity(result)}
-                  result={result}
-                  onClick={() => openResult(result)}
-                />
-              ))
-            ) : (
-              <SearchEmptyState
-                hasSearched={currentSearch.hasSearched}
-                query={query}
-              />
-            )}
-          </div>
-        </div>
-      </aside>
-
-      <section className="min-w-0 flex-1 lg:h-screen lg:overflow-y-auto">
-        {detail.type === "idle" ? (
-          <WorkspaceEmpty />
-        ) : detail.type === "loading" ? (
-          <WorkspaceLoading result={detail.result} message={loadingMessage} />
-        ) : detail.type === "error" ? (
-          <WorkspaceError result={detail.result} message={detail.message} />
-        ) : (
-          <ReferenceWorkspace
-            detail={detail}
-            filter={filter}
-            filterCounts={filterCounts}
-            filteredReferences={filteredReferences}
-            onFilterChange={setFilter}
-          />
-        )}
-      </section>
+      <SearchSidebar
+        currentSearch={currentSearch}
+        searchType={searchType}
+        selectedKey={selectedKey}
+        onOpenResult={openResult}
+        onQueryChange={updateQuery}
+        onSearchTypeChange={(nextSearchType) =>
+          dispatch({ type: "set-search-type", searchType: nextSearchType })
+        }
+        onSubmit={submitSearch}
+      />
+      <WorkspacePanel
+        detail={detail}
+        filter={filter}
+        filterCounts={filterCounts}
+        filteredReferences={filteredReferences}
+        loadingMessage={loadingMessage}
+        onFilterChange={(nextFilter) =>
+          dispatch({ type: "set-filter", filter: nextFilter })
+        }
+      />
     </main>
+  );
+}
+
+function SearchSidebar({
+  currentSearch,
+  searchType,
+  selectedKey,
+  onOpenResult,
+  onQueryChange,
+  onSearchTypeChange,
+  onSubmit,
+}: {
+  currentSearch: SearchPanelState;
+  searchType: SearchType;
+  selectedKey: string | null;
+  onOpenResult: (result: SearchResult) => void;
+  onQueryChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onSearchTypeChange: (type: SearchType) => void;
+  onSubmit: (event?: FormEvent) => void;
+}) {
+  const { error, hasSearched, query, results, searching } = currentSearch;
+
+  return (
+    <aside className="border-b border-[#c8c7bf] bg-[#f5f3ee] lg:flex lg:h-screen lg:w-80 lg:shrink-0 lg:flex-col lg:border-b-0 lg:border-r">
+      <div className="border-b border-[#c8c7bf] p-6">
+        <h1 className="mb-5 [font-family:var(--font-newsreader)] text-3xl font-medium italic tracking-tight text-[#181916]">
+          Lyrical Context
+        </h1>
+
+        <form className="space-y-3" onSubmit={onSubmit}>
+          <div className="flex rounded border border-[#c8c7bf] bg-[#e4e2dd] p-1">
+            <TypeButton
+              active={searchType === "song"}
+              icon={Music2}
+              label="Song"
+              onClick={() => onSearchTypeChange("song")}
+            />
+            <TypeButton
+              active={searchType === "album"}
+              icon={Album}
+              label="Album"
+              onClick={() => onSearchTypeChange("album")}
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <label className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#777770]" />
+              <input
+                className="h-10 w-full rounded-t border-0 border-b border-[#777770] bg-[#f0eee9] pl-9 pr-3 text-sm text-[#1b1c19] outline-none transition focus:border-[#181916] focus:ring-0"
+                placeholder={
+                  searchType === "song" ? "e.g. God's Plan" : "e.g. Scorpion"
+                }
+                value={query}
+                onChange={onQueryChange}
+              />
+            </label>
+            <button
+              className="flex size-10 shrink-0 items-center justify-center rounded bg-[#181916] text-white transition hover:bg-[#2d2d2a] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={searching}
+              type="submit"
+            >
+              {searching ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Search className="size-4" />
+              )}
+              <span className="sr-only">Search</span>
+            </button>
+          </div>
+        </form>
+
+        {error ? <InlineError message={error} /> : null}
+      </div>
+
+      <SearchResultsPanel
+        hasSearched={hasSearched}
+        query={query}
+        results={results}
+        searching={searching}
+        selectedKey={selectedKey}
+        onOpenResult={onOpenResult}
+      />
+    </aside>
+  );
+}
+
+function SearchResultsPanel({
+  hasSearched,
+  query,
+  results,
+  searching,
+  selectedKey,
+  onOpenResult,
+}: {
+  hasSearched: boolean;
+  query: string;
+  results: SearchResult[];
+  searching: boolean;
+  selectedKey: string | null;
+  onOpenResult: (result: SearchResult) => void;
+}) {
+  return (
+    <div className="p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+      <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#777770]">
+        {query.trim() ? `Results for "${query.trim()}"` : "Results"}
+      </div>
+      <div className="space-y-1">
+        {searching ? (
+          RESULT_SKELETON_KEYS.map((key) => <ResultSkeleton key={key} />)
+        ) : results.length > 0 ? (
+          results.map((result) => (
+            <SearchResultButton
+              key={resultIdentity(result)}
+              active={selectedKey === resultIdentity(result)}
+              result={result}
+              onClick={() => onOpenResult(result)}
+            />
+          ))
+        ) : (
+          <SearchEmptyState hasSearched={hasSearched} query={query} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkspacePanel({
+  detail,
+  filter,
+  filterCounts,
+  filteredReferences,
+  loadingMessage,
+  onFilterChange,
+}: {
+  detail: DetailState;
+  filter: ReferenceFilter;
+  filterCounts: Record<ReferenceFilter, number>;
+  filteredReferences: Reference[];
+  loadingMessage: string;
+  onFilterChange: (filter: ReferenceFilter) => void;
+}) {
+  return (
+    <section className="min-w-0 flex-1 lg:h-screen lg:overflow-y-auto">
+      {detail.type === "idle" ? (
+        <WorkspaceEmpty />
+      ) : detail.type === "loading" ? (
+        <WorkspaceLoading result={detail.result} message={loadingMessage} />
+      ) : detail.type === "error" ? (
+        <WorkspaceError result={detail.result} message={detail.message} />
+      ) : (
+        <ReferenceWorkspace
+          detail={detail}
+          filter={filter}
+          filterCounts={filterCounts}
+          filteredReferences={filteredReferences}
+          onFilterChange={onFilterChange}
+        />
+      )}
+    </section>
   );
 }
 
@@ -636,7 +853,7 @@ function ReferenceWorkspace({
         </div>
       </header>
 
-      <div className="px-6 py-6">
+      <div className="p-6">
         <div className="mx-auto max-w-[1120px]">
           {detail.type === "song" ? (
             <ReferenceList references={filteredReferences} />
@@ -670,12 +887,12 @@ function AlbumTrackList({
 
   return (
     <div className="space-y-0">
-      {data.tracks.map((group, index) => {
+      {data.tracks.map((group) => {
         const references = filterReferences(group.references, filter);
 
         return (
           <AlbumTrackDisclosure
-            key={trackGroupKey(group, index)}
+            key={trackGroupKey(group)}
             group={group}
             references={references}
           />
@@ -723,12 +940,12 @@ function AlbumTrackDisclosure({
       {expanded ? (
         <div
           id={panelId}
-          className="ml-7 mt-4 grid gap-4 border-l-2 border-[#7d562d]/25 pl-5 xl:grid-cols-2"
+          className="ml-7 mt-4 grid gap-4 border-l border-[#7d562d]/25 pl-5 xl:grid-cols-2"
         >
           {references.length ? (
-            references.map((reference, index) => (
+            references.map((reference) => (
               <ReferenceCard
-                key={referenceKey(reference, index)}
+                key={referenceKey(reference)}
                 reference={reference}
               />
             ))
@@ -781,8 +998,8 @@ function ReferenceList({ references }: { references: Reference[] }) {
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      {references.map((reference, index) => (
-        <ReferenceCard key={referenceKey(reference, index)} reference={reference} />
+      {references.map((reference) => (
+        <ReferenceCard key={referenceKey(reference)} reference={reference} />
       ))}
     </div>
   );
@@ -798,9 +1015,9 @@ function ReferenceCard({ reference }: { reference: Reference }) {
       <div className="absolute bottom-0 left-0 top-0 w-1 bg-[#7d562d]" />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          {visibleCategories.map((category, index) => (
+          {visibleCategories.map((category) => (
             <span
-              key={`${category}-${index}`}
+              key={category}
               className="inline-flex items-center rounded border border-[#c8c7bf] bg-[#f0eee9] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#474741]"
             >
               {categoryLabel(category)}
@@ -818,7 +1035,7 @@ function ReferenceCard({ reference }: { reference: Reference }) {
         </a>
       </div>
 
-      <blockquote className="mt-4 border-l-2 border-[#c8c7bf] pl-4 [font-family:var(--font-literata)] text-base italic leading-7 text-[#181916]">
+      <blockquote className="mt-4 border-l border-[#c8c7bf] pl-4 [font-family:var(--font-literata)] text-base italic leading-7 text-[#181916]">
         {reference.fragment}
       </blockquote>
       <AnnotationBody reference={reference} />
@@ -836,9 +1053,9 @@ function ReferenceCard({ reference }: { reference: Reference }) {
 function AnnotationBody({ reference }: { reference: Reference }) {
   if (reference.annotationHtml) {
     return (
-      <div
-        className="mt-4 [font-family:var(--font-literata)] text-[15px] leading-7 text-[#474741] [&_a]:text-[#181916] [&_a]:underline [&_a]:decoration-[#7d562d]/70 [&_a]:underline-offset-4 [&_a:hover]:text-[#7d562d] [&_blockquote]:my-4 [&_blockquote]:border-l-2 [&_blockquote]:border-[#c8c7bf] [&_blockquote]:pl-4 [&_blockquote]:text-[#181916] [&_figcaption]:mt-2 [&_figcaption]:text-center [&_figcaption]:text-xs [&_figcaption]:text-[#777770] [&_figure]:my-4 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_img]:mx-auto [&_img]:my-4 [&_img]:max-h-[420px] [&_img]:max-w-full [&_img]:rounded [&_img]:border [&_img]:border-[#c8c7bf]/70 [&_img]:object-contain [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_table]:my-4 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-[#c8c7bf] [&_td]:p-2 [&_th]:border [&_th]:border-[#c8c7bf] [&_th]:p-2 [&_ul]:list-disc"
-        dangerouslySetInnerHTML={{ __html: reference.annotationHtml }}
+      <SafeAnnotationHtml
+        fallback={reference.annotation}
+        html={reference.annotationHtml}
       />
     );
   }
@@ -847,6 +1064,158 @@ function AnnotationBody({ reference }: { reference: Reference }) {
     <p className="mt-4 [font-family:var(--font-literata)] text-[15px] leading-7 text-[#474741]">
       {reference.annotation}
     </p>
+  );
+}
+
+function SafeAnnotationHtml({
+  fallback,
+  html,
+}: {
+  fallback: string;
+  html: string;
+}) {
+  const nodes = useMemo(() => parseSafeAnnotationHtml(html), [html]);
+
+  if (!nodes.length) {
+    return <p className={ANNOTATION_BODY_CLASS}>{fallback}</p>;
+  }
+
+  return (
+    <div className={ANNOTATION_BODY_CLASS}>
+      {nodes.map((node) => renderSafeAnnotationNode(node))}
+    </div>
+  );
+}
+
+function parseSafeAnnotationHtml(html: string): SafeAnnotationNode[] {
+  if (typeof window === "undefined" || !html.trim()) {
+    return [];
+  }
+
+  const document = new window.DOMParser().parseFromString(html, "text/html");
+
+  return parseSafeAnnotationChildNodes(document.body.childNodes, "annotation");
+}
+
+function parseSafeAnnotationChildNodes(
+  childNodes: NodeListOf<ChildNode>,
+  keyPrefix: string
+): SafeAnnotationNode[] {
+  const nodes: SafeAnnotationNode[] = [];
+  let nodeIndex = 0;
+
+  childNodes.forEach((childNode) => {
+    const parsedNodes = parseSafeAnnotationNode(
+      childNode,
+      `${keyPrefix}-${nodeIndex}`
+    );
+    nodes.push(...parsedNodes);
+    nodeIndex += 1;
+  });
+
+  return nodes;
+}
+
+function parseSafeAnnotationNode(
+  node: ChildNode,
+  key: string
+): SafeAnnotationNode[] {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return [{ type: "text", key, text: node.textContent ?? "" }];
+  }
+
+  if (!(node instanceof HTMLElement)) {
+    return [];
+  }
+
+  const tag = node.tagName.toLocaleLowerCase();
+  const isSafeTag =
+    SAFE_ANNOTATION_TAGS.has(tag) || SAFE_VOID_ANNOTATION_TAGS.has(tag);
+
+  if (!isSafeTag) {
+    if (tag === "script" || tag === "style") {
+      return [];
+    }
+
+    return parseSafeAnnotationChildNodes(node.childNodes, key);
+  }
+
+  return [
+    {
+      type: "element",
+      key,
+      tag,
+      props: safeAnnotationElementProps(node, tag),
+      children: SAFE_VOID_ANNOTATION_TAGS.has(tag)
+        ? []
+        : parseSafeAnnotationChildNodes(node.childNodes, key),
+    },
+  ];
+}
+
+function safeAnnotationElementProps(
+  element: HTMLElement,
+  tag: string
+): Record<string, string> {
+  if (tag === "a") {
+    const href = safeAnnotationUrl(element.getAttribute("href"));
+
+    return {
+      ...(href ? { href } : {}),
+      ...(element.getAttribute("title")
+        ? { title: element.getAttribute("title") ?? "" }
+        : {}),
+      target: "_blank",
+      rel: "noopener noreferrer",
+    };
+  }
+
+  if (tag === "img") {
+    const src = safeAnnotationUrl(element.getAttribute("src"));
+
+    return {
+      ...(src ? { src } : {}),
+      ...(element.getAttribute("alt")
+        ? { alt: element.getAttribute("alt") ?? "" }
+        : { alt: "" }),
+      ...(element.getAttribute("height")
+        ? { height: element.getAttribute("height") ?? "" }
+        : {}),
+      loading: "lazy",
+      ...(element.getAttribute("title")
+        ? { title: element.getAttribute("title") ?? "" }
+        : {}),
+      ...(element.getAttribute("width")
+        ? { width: element.getAttribute("width") ?? "" }
+        : {}),
+    };
+  }
+
+  return {};
+}
+
+function safeAnnotationUrl(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    return ["http:", "https:", "mailto:"].includes(url.protocol) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderSafeAnnotationNode(node: SafeAnnotationNode): ReactNode {
+  if (node.type === "text") {
+    return node.text;
+  }
+
+  return createElement(
+    node.tag,
+    { ...node.props, key: node.key },
+    node.children.map((child) => renderSafeAnnotationNode(child))
   );
 }
 
@@ -876,6 +1245,9 @@ function WorkspaceLoading({
   message: string;
 }) {
   const isAlbum = result.type === "album";
+  const skeletons = isAlbum
+    ? ALBUM_LOADING_SKELETONS
+    : SONG_LOADING_SKELETONS;
   const metadataItems = [
     result.artist,
     result.type === "album" ? result.metadata.releaseYear : null,
@@ -917,10 +1289,13 @@ function WorkspaceLoading({
         <LoadingFilterPills />
       </header>
 
-      <div className="px-6 py-6">
+      <div className="p-6">
         <div className="mx-auto grid max-w-[1120px] gap-4 xl:grid-cols-2">
-          {Array.from({ length: isAlbum ? 6 : 4 }).map((_, index) => (
-            <LoadingReferenceSkeleton key={index} compact={index > 1} />
+          {skeletons.map((item) => (
+            <LoadingReferenceSkeleton
+              key={item.key}
+              compact={item.compact}
+            />
           ))}
         </div>
       </div>
@@ -965,7 +1340,7 @@ function LoadingReferenceSkeleton({ compact }: { compact: boolean }) {
         <div className="h-6 w-24 animate-pulse rounded border border-[#c8c7bf] bg-[#f0eee9]" />
         <div className="h-4 w-14 animate-pulse rounded bg-[#e4e2dd]" />
       </div>
-      <div className="mt-5 border-l-2 border-[#c8c7bf] pl-4">
+      <div className="mt-5 border-l border-[#c8c7bf] pl-4">
         <div className="h-4 w-11/12 animate-pulse rounded bg-[#e4e2dd]" />
         <div className="mt-3 h-4 w-7/12 animate-pulse rounded bg-[#e4e2dd]" />
       </div>
@@ -984,24 +1359,19 @@ function LoadingReferenceSkeleton({ compact }: { compact: boolean }) {
   );
 }
 
-function trackGroupKey(
-  group: AlbumReferenceResponse["tracks"][number],
-  index: number
-) {
+function trackGroupKey(group: AlbumReferenceResponse["tracks"][number]) {
   return [
     group.track.id,
     group.track.discNumber ?? 0,
-    group.track.trackNumber ?? index,
-    index,
+    group.track.trackNumber ?? 0,
   ].join("-");
 }
 
-function referenceKey(reference: Reference, index: number) {
+function referenceKey(reference: Reference) {
   return [
     reference.id,
     reference.referentId,
     reference.fragment.slice(0, 24),
-    index,
   ].join("-");
 }
 
@@ -1015,7 +1385,7 @@ function MetadataItems({
   return (
     <>
       {items.map((item, index) => (
-        <span key={`${item}-${index}`} className="contents">
+        <span key={item} className="contents">
           {index > 0 ? (
             <span className="size-1 rounded-full bg-[#c8c7bf]" />
           ) : null}
@@ -1136,7 +1506,15 @@ function Artwork({
       : "size-12 rounded object-cover";
 
   if (url) {
-    return <img alt="" className={className} src={url} />;
+    return (
+      <Image
+        alt=""
+        className={className}
+        height={size === "lg" ? 96 : 48}
+        src={url}
+        width={size === "lg" ? 96 : 48}
+      />
+    );
   }
 
   return (
@@ -1151,7 +1529,7 @@ function Artwork({
 
 function filterReferences(references: Reference[], filter: ReferenceFilter) {
   const sortBySongOrder = (filtered: Reference[]) =>
-    [...filtered].sort((first, second) => {
+    filtered.toSorted((first, second) => {
       const firstIndex = Number.isFinite(first.sortIndex)
         ? first.sortIndex
         : Number.MAX_SAFE_INTEGER;

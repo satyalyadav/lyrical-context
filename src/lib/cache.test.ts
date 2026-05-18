@@ -30,12 +30,13 @@ describe("SQLite JSON cache", () => {
   });
 
   it("reports cache and live sources", async () => {
-    const first = await withJsonCache("computed", 30, async () => ({
+    const [first, second] = await withJsonCache("computed", 30, async () => ({
       value: 1,
-    }));
-    const second = await withJsonCache("computed", 30, async () => ({
-      value: 2,
-    }));
+    })).then((liveResult) =>
+      withJsonCache("computed", 30, async () => ({
+        value: 2,
+      })).then((cachedResult) => [liveResult, cachedResult] as const)
+    );
 
     expect(first).toEqual({ source: "live", value: { value: 1 } });
     expect(second).toEqual({ source: "cache", value: { value: 1 } });

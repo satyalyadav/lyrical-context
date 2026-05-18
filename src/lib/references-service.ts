@@ -254,28 +254,43 @@ async function resolveTrackMatch(
   }
 
   const candidates = new Map<string, SongSearchResult>();
-  let match: SongMatch | null = null;
-
-  for (const query of buildTrackSearchQueries(track, albumArtist)) {
-    const { value: searchResults } = await searchGeniusSongs(
-      query,
-      TRACK_SEARCH_RESULT_LIMIT
-    );
-
-    for (const song of searchResults) {
-      candidates.set(song.id, song);
-    }
-
-    match = pickBestSongMatch(track, Array.from(candidates.values()));
-
-    if (match && match.confidence >= HIGH_CONFIDENCE_TRACK_MATCH) {
-      break;
-    }
-  }
+  const match = await resolveBestTrackMatch(
+    track,
+    buildTrackSearchQueries(track, albumArtist),
+    candidates
+  );
 
   setCachedJson(cacheKey, { match }, TRACK_MATCH_TTL_SECONDS);
 
   return match;
+}
+
+async function resolveBestTrackMatch(
+  track: AlbumTrack,
+  queries: string[],
+  candidates: Map<string, SongSearchResult>,
+  queryIndex = 0
+): Promise<SongMatch | null> {
+  if (queryIndex >= queries.length) {
+    return pickBestSongMatch(track, Array.from(candidates.values()));
+  }
+
+  const { value: searchResults } = await searchGeniusSongs(
+    queries[queryIndex],
+    TRACK_SEARCH_RESULT_LIMIT
+  );
+
+  for (const song of searchResults) {
+    candidates.set(song.id, song);
+  }
+
+  const match = pickBestSongMatch(track, Array.from(candidates.values()));
+
+  if (match && match.confidence >= HIGH_CONFIDENCE_TRACK_MATCH) {
+    return match;
+  }
+
+  return resolveBestTrackMatch(track, queries, candidates, queryIndex + 1);
 }
 
 function buildTrackSearchQueries(

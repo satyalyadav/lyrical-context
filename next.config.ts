@@ -14,6 +14,34 @@ const localNetworkOrigins = Object.values(networkInterfaces())
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: [...loopbackOrigins, ...localNetworkOrigins],
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "images.genius.com",
+      },
+      {
+        protocol: "https",
+        hostname: "is1-ssl.mzstatic.com",
+      },
+      {
+        protocol: "https",
+        hostname: "is2-ssl.mzstatic.com",
+      },
+      {
+        protocol: "https",
+        hostname: "is3-ssl.mzstatic.com",
+      },
+      {
+        protocol: "https",
+        hostname: "is4-ssl.mzstatic.com",
+      },
+      {
+        protocol: "https",
+        hostname: "is5-ssl.mzstatic.com",
+      },
+    ],
+  },
   serverExternalPackages: ["better-sqlite3"],
 };
 
