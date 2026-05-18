@@ -211,6 +211,25 @@ describe("Genius normalizers", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("finds a bounded multiline chunk inside a very long fragment", () => {
+    const unrelatedLines = Array.from(
+      { length: 40 },
+      (_, index) => `Unrelated credit line ${index}`
+    ).join("\n");
+
+    expect(
+      findFragmentLyricPosition(
+        `${unrelatedLines}
+Target alpha
+Target beta
+Target gamma
+Target delta
+${unrelatedLines}`,
+        "Intro line\nTarget alpha\nTarget beta\nTarget gamma\nTarget delta\nOutro line"
+      )
+    ).toBeGreaterThan(0);
+  });
+
   it("orders references using another lyric source when the first one misses a fragment", async () => {
     vi.stubGlobal(
       "fetch",

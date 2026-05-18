@@ -644,7 +644,6 @@ function ReferenceWorkspace({
             <AlbumTrackList
               data={detail.data}
               filter={filter}
-              filteredReferences={filteredReferences}
             />
           )}
         </div>
@@ -656,35 +655,23 @@ function ReferenceWorkspace({
 function AlbumTrackList({
   data,
   filter,
-  filteredReferences,
 }: {
   data: AlbumReferenceResponse;
   filter: ReferenceFilter;
-  filteredReferences: Reference[];
 }) {
-  if (filteredReferences.length === 0) {
-    const hasMissingTracks = data.tracks.some(
-      (group) => group.matchStatus !== "matched"
+  if (data.tracks.length === 0) {
+    return (
+      <EmptyPanel
+        title="No tracks found"
+        body="This album did not return any track records."
+      />
     );
-
-    if (!hasMissingTracks) {
-      return (
-        <EmptyPanel
-          title="No references match this filter"
-          body="Try another category."
-        />
-      );
-    }
   }
 
   return (
     <div className="space-y-0">
       {data.tracks.map((group, index) => {
         const references = filterReferences(group.references, filter);
-
-        if (references.length === 0 && group.matchStatus === "matched") {
-          return null;
-        }
 
         return (
           <AlbumTrackDisclosure
@@ -748,7 +735,9 @@ function AlbumTrackDisclosure({
           ) : (
             <div className="rounded border border-dashed border-[#c8c7bf] bg-[#f5f3ee] p-4 text-sm text-[#777770]">
               {group.matchStatus === "matched"
-                ? "No references yet."
+                ? group.references.length
+                  ? "No references match this filter."
+                  : "No references yet."
                 : group.error}
             </div>
           )}

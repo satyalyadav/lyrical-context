@@ -8,18 +8,35 @@ import {
   searchGeniusSongs,
 } from "@/lib/genius";
 import { getITunesAlbumTracks, searchITunesAlbums } from "@/lib/itunes";
-import { pickBestSongMatch } from "@/lib/matching";
-import { normalizeTitle } from "@/lib/text";
+import { pickBestSongMatch, type SongMatch } from "@/lib/matching";
+import { normalizeTitle, normalizeTitleForSearch } from "@/lib/text";
 import type {
   AlbumReferenceResponse,
+  AlbumTrack,
   SearchResult,
   SearchType,
+  SongSearchResult,
   SongReferenceResponse,
   TrackReferenceGroup,
 } from "@/lib/types";
 
 const TRACK_MATCH_TTL_SECONDS = 60 * 60 * 24;
-const TRACK_MATCH_CACHE_VERSION = 3;
+const TRACK_MATCH_CACHE_VERSION = 6;
+const TRACK_MATCH_CONCURRENCY = 6;
+const TRACK_REFERENCE_CONCURRENCY = 6;
+const TRACK_SEARCH_RESULT_LIMIT = 8;
+const HIGH_CONFIDENCE_TRACK_MATCH = 0.9;
+const ALBUM_LYRIC_LOOKUP_TIMEOUT_MS = 2500;
+
+type TrackMatchResolution = {
+  track: AlbumTrack;
+  match: SongMatch | null;
+  error: string | null;
+};
+
+type CachedTrackMatch = {
+  match: SongMatch | null;
+};
 
 export async function search(type: SearchType, query: string) {
   const normalizedQuery = query.trim();
@@ -84,7 +101,9 @@ export async function getAlbumReferenceResponse(
   const { value: albumPayload, source: albumSource } =
     await getITunesAlbumTracks(collectionId);
 
-  if (!albumPayload.album) {
+  const album = albumPayload.album;
+
+  if (!album) {
     throw new LyricalContextError(
       "album_not_found",
       "That album could not be found in iTunes.",
@@ -92,96 +111,240 @@ export async function getAlbumReferenceResponse(
     );
   }
 
-  const tracks = await mapWithConcurrency(albumPayload.tracks, 3, async (track) => {
-    try {
-      const match = await resolveTrackMatch(collectionId, track);
-
-      if (!match) {
-        return {
-          track,
-          matchStatus: "unmatched",
-          matchConfidence: null,
-          matchedSong: null,
-          references: [],
-          error: "No confident Genius match found.",
-        } satisfies TrackReferenceGroup;
-      }
-
-      const { value: references } = await getGeniusSongReferences(match.song.id, {
-        title: match.song.title,
-        artist: match.song.artist,
-      });
-
-      return {
-        track,
-        matchStatus: "matched",
-        matchConfidence: match.confidence,
-        matchedSong: match.song,
-        references,
-        error: null,
-      } satisfies TrackReferenceGroup;
-    } catch (error) {
-      return {
-        track,
-        matchStatus: "error",
-        matchConfidence: null,
-        matchedSong: null,
-        references: [],
-        error:
-          error instanceof Error
-            ? error.message
-            : "This track could not be loaded.",
-      } satisfies TrackReferenceGroup;
-    }
-  });
+  const matchLimiter = createConcurrencyLimiter(TRACK_MATCH_CONCURRENCY);
+  const referenceLimiter = createConcurrencyLimiter(TRACK_REFERENCE_CONCURRENCY);
+  const tracks = await Promise.all(
+    albumPayload.tracks.map((track) =>
+      matchLimiter(() => resolveTrackMatchResolution(collectionId, track, album.artist))
+        .then((trackMatch) =>
+          referenceLimiter(() => resolveTrackReferenceGroup(trackMatch))
+        )
+    )
+  );
 
   return {
-    album: albumPayload.album,
+    album,
     tracks,
     source: albumSource,
   };
 }
 
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  mapper: (item: T, index: number) => Promise<R>
-) {
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
+function publicTrackError(error: unknown) {
+  return error instanceof Error ? error.message : "This track could not be loaded.";
+}
 
-  async function worker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      results[index] = await mapper(items[index], index);
-    }
+async function resolveTrackMatchResolution(
+  collectionId: string,
+  track: AlbumTrack,
+  albumArtist: string
+): Promise<TrackMatchResolution> {
+  try {
+    return {
+      track,
+      match: await resolveTrackMatch(collectionId, track, albumArtist),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      track,
+      match: null,
+      error: publicTrackError(error),
+    };
+  }
+}
+
+async function resolveTrackReferenceGroup({
+  track,
+  match,
+  error,
+}: TrackMatchResolution): Promise<TrackReferenceGroup> {
+  if (error) {
+    return {
+      track,
+      matchStatus: "error",
+      matchConfidence: null,
+      matchedSong: null,
+      references: [],
+      error,
+    };
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
-  );
+  if (!match) {
+    return {
+      track,
+      matchStatus: "unmatched",
+      matchConfidence: null,
+      matchedSong: null,
+      references: [],
+      error: "No confident Genius match found.",
+    };
+  }
 
-  return results;
+  try {
+    const { value: references } = await getGeniusSongReferences(match.song.id, {
+      title: match.song.title,
+      artist: match.song.artist,
+      lyricLookupTimeoutMs: ALBUM_LYRIC_LOOKUP_TIMEOUT_MS,
+    });
+
+    return {
+      track,
+      matchStatus: "matched",
+      matchConfidence: match.confidence,
+      matchedSong: match.song,
+      references,
+      error: null,
+    };
+  } catch (referenceError) {
+    return {
+      track,
+      matchStatus: "error",
+      matchConfidence: null,
+      matchedSong: null,
+      references: [],
+      error: publicTrackError(referenceError),
+    };
+  }
+}
+
+function createConcurrencyLimiter(concurrency: number) {
+  let activeCount = 0;
+  const queue: Array<() => void> = [];
+
+  function runNext() {
+    if (activeCount >= concurrency) {
+      return;
+    }
+
+    const task = queue.shift();
+
+    if (!task) {
+      return;
+    }
+
+    activeCount += 1;
+    task();
+  }
+
+  return function runLimited<T>(task: () => Promise<T>) {
+    return new Promise<T>((resolve, reject) => {
+      queue.push(() => {
+        task()
+          .then(resolve, reject)
+          .finally(() => {
+            activeCount -= 1;
+            runNext();
+          });
+      });
+      runNext();
+    });
+  };
 }
 
 async function resolveTrackMatch(
   collectionId: string,
-  track: Parameters<typeof pickBestSongMatch>[0]
+  track: AlbumTrack,
+  albumArtist?: string | null
 ) {
   const cacheKey = `album-track-match:v${TRACK_MATCH_CACHE_VERSION}:${collectionId}:${track.id}`;
-  const cached = getCachedJson<ReturnType<typeof pickBestSongMatch>>(cacheKey);
+  const cached = getCachedJson<CachedTrackMatch>(cacheKey);
 
-  if (cached !== null) {
-    return cached;
+  if (cached) {
+    return cached.match;
   }
 
-  const { value: candidates } = await searchGeniusSongs(
-    `${track.artist} ${normalizeTitle(track.title)}`,
-    8
-  );
-  const match = pickBestSongMatch(track, candidates);
-  setCachedJson(cacheKey, match, TRACK_MATCH_TTL_SECONDS);
+  const candidates = new Map<string, SongSearchResult>();
+  let match: SongMatch | null = null;
+
+  for (const query of buildTrackSearchQueries(track, albumArtist)) {
+    const { value: searchResults } = await searchGeniusSongs(
+      query,
+      TRACK_SEARCH_RESULT_LIMIT
+    );
+
+    for (const song of searchResults) {
+      candidates.set(song.id, song);
+    }
+
+    match = pickBestSongMatch(track, Array.from(candidates.values()));
+
+    if (match && match.confidence >= HIGH_CONFIDENCE_TRACK_MATCH) {
+      break;
+    }
+  }
+
+  setCachedJson(cacheKey, { match }, TRACK_MATCH_TTL_SECONDS);
 
   return match;
 }
+
+function buildTrackSearchQueries(
+  track: AlbumTrack,
+  albumArtist?: string | null
+) {
+  const titleVariants = buildTrackTitleSearchVariants(track.title);
+  const artists = [
+    track.artist,
+    albumArtist,
+    firstCreditedArtist(track.artist),
+    albumArtist ? firstCreditedArtist(albumArtist) : null,
+  ].filter((artist): artist is string => Boolean(artist));
+  const queries = artists.flatMap((artist) =>
+    titleVariants.map((title) => `${artist} ${title}`)
+  );
+
+  if (artists[0]) {
+    queries.push(...titleVariants.map((title) => `${title} ${artists[0]}`));
+  }
+
+  return uniqueSearchQueries(queries);
+}
+
+function buildTrackTitleSearchVariants(title: string) {
+  const titleForSearch = normalizeTitleForSearch(title);
+  const normalizedTitle = normalizeTitle(title);
+  const variants = [titleForSearch];
+
+  if (shouldAddCompactInitialismTitle(titleForSearch, normalizedTitle)) {
+    variants.push(titleForSearch.replace(/[^\p{L}\p{N}]+/gu, ""));
+  }
+
+  variants.push(normalizedTitle);
+
+  return uniqueSearchQueries(variants);
+}
+
+function shouldAddCompactInitialismTitle(
+  titleForSearch: string,
+  normalizedTitle: string
+) {
+  const tokens = normalizedTitle.split(" ").filter(Boolean);
+
+  return (
+    /[^\p{L}\p{N}\s]/u.test(titleForSearch) &&
+    tokens.length >= 2 &&
+    tokens.every((token) => token.length === 1)
+  );
+}
+
+function firstCreditedArtist(value: string) {
+  return value.split(ARTIST_CREDIT_SEPARATOR)[0]?.trim() ?? "";
+}
+
+function uniqueSearchQueries(queries: string[]) {
+  const seen = new Set<string>();
+
+  return queries.filter((query) => {
+    const normalizedQuery = query.toLocaleLowerCase().replace(/\s+/g, " ").trim();
+
+    if (!normalizedQuery || seen.has(normalizedQuery)) {
+      return false;
+    }
+
+    seen.add(normalizedQuery);
+    return true;
+  });
+}
+
+const ARTIST_CREDIT_SEPARATOR =
+  /\s*(?:,|&|\band\b|\bwith\b|\bfeat\.?|\bft\.?|\bx\b)\s*/i;

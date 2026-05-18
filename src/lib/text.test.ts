@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   detectReferenceCategories,
   normalizeTitle,
+  normalizeTitleForSearch,
   stripHtml,
   truncateText,
 } from "@/lib/text";
@@ -19,6 +20,14 @@ describe("text utilities", () => {
       "you had me you lost me"
     );
     expect(normalizeTitle("Gangsta B's")).toBe("gangsta bitches");
+    expect(normalizeTitle("A*****e (feat. Skylar Grey)")).toBe("asshole");
+  });
+
+  it("keeps punctuation that improves external title search", () => {
+    expect(normalizeTitleForSearch("G.O.M.D (Edited)")).toBe("g.o.m.d");
+    expect(normalizeTitleForSearch("A*****e (feat. Skylar Grey)")).toBe(
+      "asshole"
+    );
   });
 
   it("strips simple Genius HTML bodies to readable text", () => {

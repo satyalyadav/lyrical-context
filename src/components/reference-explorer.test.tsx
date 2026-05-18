@@ -524,6 +524,109 @@ describe("ReferenceExplorer", () => {
     expect(screen.getByPlaceholderText("e.g. Scorpion")).toBeVisible();
   });
 
+  it("keeps matched album tracks visible when a filter has no references", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              type: "album",
+              id: "1742292297",
+              title: "WE STILL DON'T TRUST YOU",
+              artist: "Future & Metro Boomin",
+              artworkUrl: null,
+              sourceUrl: "https://music.apple.com/album",
+              metadata: {
+                collectionId: 1742292297,
+                trackCount: 25,
+                releaseYear: "2024",
+              },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          album: {
+            type: "album",
+            id: "1742292297",
+            title: "WE STILL DON'T TRUST YOU",
+            artist: "Future & Metro Boomin",
+            artworkUrl: null,
+            sourceUrl: "https://music.apple.com/album",
+            metadata: {
+              collectionId: 1742292297,
+              trackCount: 25,
+              releaseYear: "2024",
+            },
+          },
+          tracks: [
+            {
+              track: {
+                id: "1",
+                title: "Filtered Out Track",
+                artist: "Future & Metro Boomin",
+                trackNumber: 1,
+                discNumber: 1,
+                explicitness: "explicit",
+              },
+              matchStatus: "matched",
+              matchConfidence: 0.95,
+              matchedSong: null,
+              references: [
+                {
+                  id: "ref-1",
+                  referentId: "referent-1",
+                  sortIndex: 0,
+                  fragment: "An unverified line",
+                  annotation: "An unverified reference.",
+                  annotationHtml: null,
+                  sourceUrl: "https://genius.com/annotation",
+                  state: null,
+                  classification: null,
+                  verified: false,
+                  votesTotal: 4,
+                  categories: [],
+                },
+              ],
+              error: null,
+            },
+          ],
+          source: "live",
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReferenceExplorer />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Album" }));
+    await userEvent.type(
+      screen.getByPlaceholderText("e.g. Scorpion"),
+      "we still don't trust you"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    await screen.findByText("WE STILL DON'T TRUST YOU");
+    await userEvent.click(
+      screen.getByRole("button", { name: /WE STILL DON'T TRUST YOU/i })
+    );
+
+    const trackButton = await screen.findByRole("button", {
+      name: /Filtered Out Track/i,
+    });
+    expect(trackButton).toBeVisible();
+    expect(screen.getByText("0 refs")).toBeVisible();
+
+    await userEvent.click(trackButton);
+
+    expect(await screen.findByText("No references match this filter.")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: /Unverified/i }));
+
+    expect(await screen.findByText("An unverified line")).toBeVisible();
+  });
+
   it("keeps album track references collapsed until a track is opened", async () => {
     const fetchMock = vi
       .fn()

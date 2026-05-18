@@ -13,19 +13,26 @@ import type { Reference, SongSearchResult } from "@/lib/types";
 const GENIUS_API_BASE = "https://api.genius.com";
 const LRCLIB_API_BASE = "https://lrclib.net/api";
 const LYRICS_OVH_API_BASE = "https://api.lyrics.ovh/v1";
+const SEARCH_CACHE_VERSION = 2;
 const SEARCH_TTL_SECONDS = 60 * 60 * 24;
 const REFERENCES_TTL_SECONDS = 60 * 30;
-const REFERENCES_CACHE_VERSION = 7;
+const REFERENCES_CACHE_VERSION = 9;
 const MAX_REFERENT_PAGES = 6;
 const REFERENTS_PER_PAGE = 50;
 const ANNOTATION_SORT_BUCKET_SIZE = 1000;
 const LYRIC_POSITION_SORT_BUCKET_SIZE = 10_000;
 const FALLBACK_SORT_BASE = 1_000_000_000;
-const LYRIC_LOOKUP_TIMEOUT_MS = 4000;
+const DEFAULT_LYRIC_LOOKUP_TIMEOUT_MS = 4000;
 const FUZZY_POSITION_MIN_TOKENS = 5;
 const FUZZY_POSITION_MIN_SIGNIFICANT_TOKENS = 2;
 const FUZZY_POSITION_MIN_SCORE = 0.8;
 const FUZZY_POSITION_MAX_TOKEN_DELTA = 2;
+const FUZZY_POSITION_MAX_ANCHOR_TOKENS = 4;
+const FUZZY_POSITION_MAX_CANDIDATE_TOKENS = 80;
+const FUZZY_POSITION_MAX_WINDOW_EVALUATIONS = 3000;
+const POSITION_CANDIDATE_MAX_CHUNK_LINES = 4;
+const POSITION_CANDIDATE_MAX_JOIN_TOKENS = 24;
+const POSITION_CANDIDATE_MAX_JOIN_VARIANTS = 16;
 
 type GeniusSearchResponse = {
   response?: {
@@ -95,6 +102,7 @@ type GeniusAnnotation = {
 type SongReferenceOrderContext = {
   title?: string | null;
   artist?: string | null;
+  lyricLookupTimeoutMs?: number;
 };
 
 type LrclibLyricsResponse = {
@@ -112,8 +120,14 @@ type LyricOrderText = {
   normalizedLength: number;
 };
 
+type LyricPositionSearchContext = {
+  normalizedLyrics: string;
+  lyricTokens: LyricToken[];
+  lyricTokenIndex: Map<string, number[]>;
+};
+
 export async function searchGeniusSongs(query: string, limit = 12) {
-  const key = `genius:search:${query.toLocaleLowerCase()}:${limit}`;
+  const key = `genius:search:v${SEARCH_CACHE_VERSION}:${query.toLocaleLowerCase()}:${limit}`;
 
   return withJsonCache(key, SEARCH_TTL_SECONDS, async () => {
     const payload = await geniusRequest<GeniusSearchResponse>(
@@ -133,31 +147,19 @@ export async function getGeniusSongReferences(
   orderContext?: SongReferenceOrderContext
 ) {
   const canResolveLyricOrder = Boolean(orderContext?.title && orderContext.artist);
+  const lyricLookupTimeoutMs =
+    orderContext?.lyricLookupTimeoutMs ?? DEFAULT_LYRIC_LOOKUP_TIMEOUT_MS;
   const key = `genius:references:v${REFERENCES_CACHE_VERSION}:${songId}:${
-    canResolveLyricOrder ? "lyric-order" : "api-order"
+    canResolveLyricOrder ? `lyric-order:${lyricLookupTimeoutMs}` : "api-order"
   }`;
 
   return withJsonCache(key, REFERENCES_TTL_SECONDS, async () => {
-    const referents: GeniusReferent[] = [];
-
-    for (let page = 1; page <= MAX_REFERENT_PAGES; page += 1) {
-      const payload = await geniusRequest<GeniusReferentsResponse>(
-        `/referents?song_id=${encodeURIComponent(
-          songId
-        )}&text_format=plain,html&per_page=${REFERENTS_PER_PAGE}&page=${page}`
-      );
-      const pageReferents = payload.response?.referents ?? [];
-
-      referents.push(...pageReferents);
-
-      if (pageReferents.length < REFERENTS_PER_PAGE) {
-        break;
-      }
-    }
+    const lyricTextsPromise = fetchLyricOrderTexts(orderContext).catch(() => []);
+    const referents = await fetchGeniusReferents(songId);
 
     const lyricPositions = await resolveReferentLyricPositions(
       referents,
-      orderContext
+      lyricTextsPromise
     );
     const references = referents.flatMap((referent, referentIndex) => {
       const lyricPosition = lyricPositions.get(referent.id);
@@ -172,6 +174,52 @@ export async function getGeniusSongReferences(
 
     return sortReferencesChronologically(references);
   });
+}
+
+async function fetchGeniusReferents(songId: string) {
+  const firstPageReferents = await fetchGeniusReferentPage(songId, 1);
+  const referents = [...firstPageReferents];
+
+  if (firstPageReferents.length < REFERENTS_PER_PAGE) {
+    return referents;
+  }
+
+  const remainingPages = Array.from(
+    { length: MAX_REFERENT_PAGES - 1 },
+    (_, index) => index + 2
+  );
+  const remainingResults = remainingPages.map((page) =>
+    fetchGeniusReferentPage(songId, page).then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason) => ({ status: "rejected" as const, reason })
+    )
+  );
+
+  for (const result of remainingResults) {
+    const pageResult = await result;
+
+    if (pageResult.status === "rejected") {
+      throw pageResult.reason;
+    }
+
+    referents.push(...pageResult.value);
+
+    if (pageResult.value.length < REFERENTS_PER_PAGE) {
+      break;
+    }
+  }
+
+  return referents;
+}
+
+async function fetchGeniusReferentPage(songId: string, page: number) {
+  const payload = await geniusRequest<GeniusReferentsResponse>(
+    `/referents?song_id=${encodeURIComponent(
+      songId
+    )}&text_format=plain,html&per_page=${REFERENTS_PER_PAGE}&page=${page}`
+  );
+
+  return payload.response?.referents ?? [];
 }
 
 export async function getGeniusSongDetails(songId: string) {
@@ -271,9 +319,9 @@ function sortReferencesChronologically(references: Reference[]) {
 
 async function resolveReferentLyricPositions(
   referents: GeniusReferent[],
-  orderContext?: SongReferenceOrderContext
+  lyricTextsPromise: Promise<LyricOrderText[]>
 ) {
-  const lyricTexts = await fetchLyricOrderTexts(orderContext);
+  const lyricTexts = await lyricTextsPromise;
   const positions = new Map<number, number>();
 
   if (!lyricTexts.length) {
@@ -281,12 +329,13 @@ async function resolveReferentLyricPositions(
   }
 
   const lyricPositionSets = lyricTexts.map((lyricText) => {
+    const searchContext = createLyricPositionSearchContext(lyricText.lyrics);
     const sourcePositions = new Map<number, number>();
 
     for (const referent of referents) {
-      const position = findFragmentLyricPosition(
+      const position = findFragmentPositionInContext(
         referent.range?.content ?? referent.fragment ?? "",
-        lyricText.lyrics
+        searchContext
       );
 
       if (position !== null) {
@@ -336,14 +385,16 @@ async function resolveReferentLyricPositions(
 async function fetchLyricOrderTexts(orderContext?: SongReferenceOrderContext) {
   const title = orderContext?.title?.trim();
   const artist = orderContext?.artist?.trim();
+  const timeoutMs =
+    orderContext?.lyricLookupTimeoutMs ?? DEFAULT_LYRIC_LOOKUP_TIMEOUT_MS;
 
   if (!title || !artist) {
     return [];
   }
 
   const lyricResults = await Promise.all([
-    fetchLrclibLyrics(artist, title),
-    fetchLyricsOvhLyrics(artist, title),
+    fetchLrclibLyrics(artist, title, timeoutMs),
+    fetchLyricsOvhLyrics(artist, title, timeoutMs),
   ]);
   const seen = new Set<string>();
 
@@ -364,12 +415,16 @@ async function fetchLyricOrderTexts(orderContext?: SongReferenceOrderContext) {
   });
 }
 
-async function fetchLrclibLyrics(artist: string, title: string) {
+async function fetchLrclibLyrics(
+  artist: string,
+  title: string,
+  timeoutMs: number
+) {
   const url = new URL(`${LRCLIB_API_BASE}/get`);
   url.searchParams.set("artist_name", artist);
   url.searchParams.set("track_name", title);
 
-  const payload = await fetchJsonSafely<LrclibLyricsResponse>(url);
+  const payload = await fetchJsonSafely<LrclibLyricsResponse>(url, timeoutMs);
 
   if (!payload || payload.instrumental) {
     return null;
@@ -378,20 +433,24 @@ async function fetchLrclibLyrics(artist: string, title: string) {
   return payload.plainLyrics ?? stripSyncedLyricsTimestamps(payload.syncedLyrics);
 }
 
-async function fetchLyricsOvhLyrics(artist: string, title: string) {
+async function fetchLyricsOvhLyrics(
+  artist: string,
+  title: string,
+  timeoutMs: number
+) {
   const url = new URL(
     `${LYRICS_OVH_API_BASE}/${encodeURIComponent(artist)}/${encodeURIComponent(
       title
     )}`
   );
-  const payload = await fetchJsonSafely<LyricsOvhResponse>(url);
+  const payload = await fetchJsonSafely<LyricsOvhResponse>(url, timeoutMs);
 
   return payload?.lyrics ?? null;
 }
 
-async function fetchJsonSafely<T>(url: URL) {
+async function fetchJsonSafely<T>(url: URL, timeoutMs: number) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), LYRIC_LOOKUP_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -420,26 +479,52 @@ function stripSyncedLyricsTimestamps(value?: string | null) {
 }
 
 export function findFragmentLyricPosition(fragment: string, lyrics: string) {
-  const normalizedLyrics = normalizeLyricsForPosition(lyrics);
+  return findFragmentPositionInContext(
+    fragment,
+    createLyricPositionSearchContext(lyrics)
+  );
+}
 
-  if (!normalizedLyrics) {
+function createLyricPositionSearchContext(
+  lyrics: string
+): LyricPositionSearchContext {
+  const normalizedLyrics = normalizeLyricsForPosition(lyrics);
+  const lyricTokens = tokenizeNormalizedLyrics(normalizedLyrics);
+  const lyricTokenIndex = new Map<string, number[]>();
+
+  lyricTokens.forEach((token, index) => {
+    const positions = lyricTokenIndex.get(token.looseValue) ?? [];
+    positions.push(index);
+    lyricTokenIndex.set(token.looseValue, positions);
+  });
+
+  return {
+    normalizedLyrics,
+    lyricTokens,
+    lyricTokenIndex,
+  };
+}
+
+function findFragmentPositionInContext(
+  fragment: string,
+  searchContext: LyricPositionSearchContext
+) {
+  if (!searchContext.normalizedLyrics) {
     return null;
   }
 
   const normalizedCandidates = getNormalizedFragmentPositionCandidates(fragment);
 
   for (const normalizedCandidate of normalizedCandidates) {
-    const position = normalizedLyrics.indexOf(normalizedCandidate);
+    const position = searchContext.normalizedLyrics.indexOf(normalizedCandidate);
 
     if (position !== -1) {
       return position;
     }
   }
 
-  const lyricTokens = tokenizeNormalizedLyrics(normalizedLyrics);
-
   for (const normalizedCandidate of normalizedCandidates) {
-    const position = findFuzzyFragmentPosition(normalizedCandidate, lyricTokens);
+    const position = findFuzzyFragmentPosition(normalizedCandidate, searchContext);
 
     if (position !== null) {
       return position;
@@ -451,12 +536,14 @@ export function findFragmentLyricPosition(fragment: string, lyrics: string) {
 
 function findFuzzyFragmentPosition(
   normalizedCandidate: string,
-  lyricTokens: LyricToken[]
+  searchContext: LyricPositionSearchContext
 ) {
   const candidateTokens = normalizedCandidate.split(" ").filter(Boolean);
+  const { lyricTokens } = searchContext;
 
   if (
     candidateTokens.length < FUZZY_POSITION_MIN_TOKENS ||
+    candidateTokens.length > FUZZY_POSITION_MAX_CANDIDATE_TOKENS ||
     countSignificantTokens(candidateTokens) <
       FUZZY_POSITION_MIN_SIGNIFICANT_TOKENS
   ) {
@@ -469,18 +556,36 @@ function findFuzzyFragmentPosition(
     candidateTokens.length - FUZZY_POSITION_MAX_TOKEN_DELTA
   );
   const maxWindowSize = candidateTokens.length + FUZZY_POSITION_MAX_TOKEN_DELTA;
+  const windowStarts = getFuzzyCandidateWindowStarts(
+    candidateTokens,
+    searchContext,
+    minWindowSize
+  );
+  const windowEvaluationCount =
+    windowStarts.length * (maxWindowSize - minWindowSize + 1);
+
+  if (windowEvaluationCount > FUZZY_POSITION_MAX_WINDOW_EVALUATIONS) {
+    return null;
+  }
 
   for (let windowSize = minWindowSize; windowSize <= maxWindowSize; windowSize += 1) {
-    for (let index = 0; index <= lyricTokens.length - windowSize; index += 1) {
-      const windowTokens = lyricTokens.slice(index, index + windowSize);
+    for (const index of windowStarts) {
+      if (index > lyricTokens.length - windowSize) {
+        continue;
+      }
+
       const score =
-        longestCommonTokenSubsequenceLength(candidateTokens, windowTokens) /
-        Math.max(candidateTokens.length, windowTokens.length);
+        longestCommonTokenSubsequenceLength(
+          candidateTokens,
+          lyricTokens,
+          index,
+          windowSize
+        ) / Math.max(candidateTokens.length, windowSize);
 
       if (!bestMatch || score > bestMatch.score) {
         bestMatch = {
           score,
-          position: windowTokens[0].position,
+          position: lyricTokens[index].position,
         };
       }
     }
@@ -489,6 +594,48 @@ function findFuzzyFragmentPosition(
   return bestMatch && bestMatch.score >= FUZZY_POSITION_MIN_SCORE
     ? bestMatch.position
     : null;
+}
+
+function getFuzzyCandidateWindowStarts(
+  candidateTokens: string[],
+  searchContext: LyricPositionSearchContext,
+  minWindowSize: number
+) {
+  const candidateAnchors = candidateTokens
+    .map((token, index) => ({
+      index,
+      looseValue: normalizeLooseLyricToken(token),
+    }))
+    .filter((token) => !isLowSignalLyricToken(token.looseValue))
+    .map((token) => ({
+      ...token,
+      lyricIndexes: searchContext.lyricTokenIndex.get(token.looseValue) ?? [],
+    }))
+    .filter((token) => token.lyricIndexes.length > 0)
+    .sort((first, second) => first.lyricIndexes.length - second.lyricIndexes.length)
+    .slice(0, FUZZY_POSITION_MAX_ANCHOR_TOKENS);
+  const starts = new Set<number>();
+
+  for (const anchor of candidateAnchors) {
+    for (const lyricIndex of anchor.lyricIndexes) {
+      for (
+        let delta = -FUZZY_POSITION_MAX_TOKEN_DELTA;
+        delta <= FUZZY_POSITION_MAX_TOKEN_DELTA;
+        delta += 1
+      ) {
+        const start = lyricIndex - anchor.index + delta;
+
+        if (
+          start >= 0 &&
+          start <= searchContext.lyricTokens.length - minWindowSize
+        ) {
+          starts.add(start);
+        }
+      }
+    }
+  }
+
+  return Array.from(starts).sort((first, second) => first - second);
 }
 
 type LyricToken = {
@@ -511,18 +658,22 @@ function tokenizeNormalizedLyrics(value: string): LyricToken[] {
 
 function longestCommonTokenSubsequenceLength(
   candidateTokens: string[],
-  lyricTokens: LyricToken[]
+  lyricTokens: LyricToken[],
+  windowStart: number,
+  windowSize: number
 ) {
-  const previousRow = Array(lyricTokens.length + 1).fill(0);
-  const currentRow = Array(lyricTokens.length + 1).fill(0);
+  const previousRow = Array(windowSize + 1).fill(0);
+  const currentRow = Array(windowSize + 1).fill(0);
 
   for (const candidateToken of candidateTokens) {
     const candidateLooseToken = normalizeLooseLyricToken(candidateToken);
 
-    for (let index = 0; index < lyricTokens.length; index += 1) {
+    for (let index = 0; index < windowSize; index += 1) {
+      const lyricToken = lyricTokens[windowStart + index];
+
       currentRow[index + 1] =
-        candidateToken === lyricTokens[index].value ||
-        candidateLooseToken === lyricTokens[index].looseValue
+        candidateToken === lyricToken.value ||
+        candidateLooseToken === lyricToken.looseValue
           ? previousRow[index] + 1
           : Math.max(previousRow[index + 1], currentRow[index]);
     }
@@ -533,7 +684,7 @@ function longestCommonTokenSubsequenceLength(
     }
   }
 
-  return previousRow[lyricTokens.length];
+  return previousRow[windowSize];
 }
 
 function countSignificantTokens(tokens: string[]) {
@@ -587,8 +738,12 @@ function getFragmentPositionCandidates(fragment: string) {
     .map((line) => line.trim())
     .filter(Boolean);
   const candidates = [cleanedFragment];
+  const maxChunkSize = Math.min(
+    lines.length,
+    POSITION_CANDIDATE_MAX_CHUNK_LINES
+  );
 
-  for (let chunkSize = lines.length; chunkSize >= 1; chunkSize -= 1) {
+  for (let chunkSize = maxChunkSize; chunkSize >= 1; chunkSize -= 1) {
     for (let index = 0; index <= lines.length - chunkSize; index += 1) {
       candidates.push(lines.slice(index, index + chunkSize).join(" "));
     }
@@ -613,15 +768,20 @@ function getNormalizedFragmentPositionCandidates(fragment: string) {
 function getAdjacentTokenJoinVariants(normalizedCandidate: string) {
   const tokens = normalizedCandidate.split(" ").filter(Boolean);
 
-  if (tokens.length < 2) {
+  if (
+    tokens.length < 2 ||
+    tokens.length > POSITION_CANDIDATE_MAX_JOIN_TOKENS
+  ) {
     return [];
   }
 
-  return tokens.slice(0, -1).map((_, index) => [
-    ...tokens.slice(0, index),
-    `${tokens[index]}${tokens[index + 1]}`,
-    ...tokens.slice(index + 2),
-  ].join(" "));
+  return tokens
+    .slice(0, Math.min(tokens.length - 1, POSITION_CANDIDATE_MAX_JOIN_VARIANTS))
+    .map((_, index) => [
+      ...tokens.slice(0, index),
+      `${tokens[index]}${tokens[index + 1]}`,
+      ...tokens.slice(index + 2),
+    ].join(" "));
 }
 
 function removeLyricSectionLabels(value: string) {

@@ -11,6 +11,7 @@ const VERSION_PATTERN =
 const NON_WORD_PATTERN = /[^\p{L}\p{N}\s]/gu;
 
 const TITLE_ALIAS_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\ba\*+e\b/gi, "asshole"],
   [/\bb['’]?s\b/gi, "bitches"],
 ];
 
@@ -142,6 +143,17 @@ export function normalizeTitle(value: string) {
         .replace(FEATURE_PATTERN, "")
         .replace(VERSION_PATTERN, "")
     ).replace(NON_WORD_PATTERN, " ")
+  );
+}
+
+export function normalizeTitleForSearch(value: string) {
+  return compactWhitespace(
+    applyTitleAliases(
+      value
+        .toLocaleLowerCase()
+        .replace(FEATURE_PATTERN, "")
+        .replace(VERSION_PATTERN, "")
+    )
   );
 }
 
