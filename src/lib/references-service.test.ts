@@ -459,6 +459,56 @@ describe("references service", () => {
     );
   });
 
+  it("matches stylized artist diacritics against Genius title spelling", async () => {
+    vi.mocked(getITunesAlbumTracks).mockResolvedValueOnce({
+      value: {
+        album: {
+          ...albumResult(),
+          artist: "JAŸ-Z",
+        },
+        tracks: [
+          {
+            ...albumTrack("track-1", "Kill JAŸ-Z", 1),
+            artist: "JAY-Z",
+          },
+        ],
+      },
+      source: "live",
+    });
+    vi.mocked(searchGeniusSongs).mockImplementation(async (query) => ({
+      value:
+        query === "JAY-Z kill jay-z"
+          ? [
+              songResult("song-1", "Kill Jay Z", {
+                artist: "JAŸ-Z",
+                metadata: {
+                  geniusId: 1,
+                  releaseYear: "2017",
+                  albumTitle: "4:44",
+                  featuredArtists: [],
+                },
+              }),
+            ]
+          : [],
+      source: "live",
+    }));
+    vi.mocked(getGeniusSongReferences).mockResolvedValue({
+      value: [referenceResult("song-1-reference")],
+      source: "live",
+    });
+
+    const payload = await getAlbumReferenceResponse("album-1");
+
+    expect(payload.tracks[0]).toMatchObject({
+      matchStatus: "matched",
+      matchedSong: {
+        id: "song-1",
+        title: "Kill Jay Z",
+        artist: "JAŸ-Z",
+      },
+    });
+  });
+
   it("caches unmatched track searches", async () => {
     vi.mocked(getITunesAlbumTracks).mockResolvedValue({
       value: {
