@@ -28,6 +28,7 @@ import {
 } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 
+import { ReportIssueDialog } from "@/components/report-issue-dialog";
 import { getApiRequestHeaders } from "@/lib/api-client";
 import type {
   AlbumReferenceResponse,
@@ -553,6 +554,7 @@ export function ReferenceExplorer() {
       <SearchSidebar
         budget={budget}
         currentSearch={currentSearch}
+        detail={detail}
         searchType={searchType}
         selectedKey={selectedKey}
         onOpenResult={openResult}
@@ -579,6 +581,7 @@ export function ReferenceExplorer() {
 function SearchSidebar({
   budget,
   currentSearch,
+  detail,
   searchType,
   selectedKey,
   onOpenResult,
@@ -588,6 +591,7 @@ function SearchSidebar({
 }: {
   budget: UsageBudgetStatus | null;
   currentSearch: SearchPanelState;
+  detail: DetailState;
   searchType: SearchType;
   selectedKey: string | null;
   onOpenResult: (result: SearchResult) => void;
@@ -659,6 +663,14 @@ function SearchSidebar({
         selectedKey={selectedKey}
         onOpenResult={onOpenResult}
       />
+
+      <div className="mt-auto shrink-0 border-t border-[#c8c7bf] p-3">
+        <ReportIssueDialog
+          detail={detail}
+          query={query}
+          searchType={searchType}
+        />
+      </div>
     </aside>
   );
 }

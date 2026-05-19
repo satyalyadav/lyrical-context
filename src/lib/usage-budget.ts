@@ -1,20 +1,13 @@
 import "server-only";
 
 import { LyricalContextError } from "@/lib/errors";
+import { getRedisConfig, runRedisPipeline } from "@/lib/redis";
 
 export type UsageBudgetSnapshot = {
   limit: number;
   remaining: number;
   resetAt: number;
   state: "ok" | "warning" | "blocked";
-};
-
-type RedisPipelineObjectResponse = {
-  result?: unknown[];
-};
-
-type RedisPipelineItemResponse = {
-  result?: unknown;
 };
 
 type BudgetConfig = {
@@ -24,11 +17,6 @@ type BudgetConfig = {
   warningRemaining: number;
   windowEndsAt: number;
   windowSeconds: number;
-};
-
-type RedisConfig = {
-  url: string;
-  token: string;
 };
 
 const DEFAULT_BUDGET_LIMIT = 500;
@@ -166,47 +154,6 @@ async function readCounter(config: BudgetConfig) {
   return { count: localBudget.get(config.key) ?? 0 };
 }
 
-async function runRedisPipeline(
-  redis: RedisConfig,
-  commands: string[][]
-) {
-  const response = await fetch(`${redis.url}/pipeline`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${redis.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(commands),
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new LyricalContextError(
-      "usage_budget_unavailable",
-      "The shared usage budget could not be checked. Please try again later.",
-      503
-    );
-  }
-
-  const payload = (await response.json()) as
-    | RedisPipelineObjectResponse
-    | RedisPipelineItemResponse[];
-
-  if (Array.isArray(payload)) {
-    return payload.map((item) => item.result);
-  }
-
-  if (!Array.isArray(payload.result)) {
-    throw new LyricalContextError(
-      "usage_budget_unavailable",
-      "The shared usage budget could not be checked. Please try again later.",
-      503
-    );
-  }
-
-  return payload.result;
-}
-
 function getBudgetConfig() {
   const limit = getPositiveInteger(
     process.env.LYRICAL_CONTEXT_GENIUS_BUDGET_LIMIT,
@@ -239,19 +186,6 @@ function getBudgetConfig() {
     windowEndsAt: windowStartedAt + windowSeconds * 1000,
     windowSeconds,
   };
-}
-
-function getRedisConfig() {
-  const url = (
-    process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL
-  )?.replace(/\/$/u, "");
-  const token = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
-
-  if (!url || !token) {
-    return null;
-  }
-
-  return { url, token } satisfies RedisConfig;
 }
 
 function getPositiveInteger(value: string | undefined, fallback: number) {
