@@ -13,6 +13,7 @@ describe("text utilities", () => {
     expect(normalizeTitle("Search & Rescue (feat. Drake) [Clean]")).toBe(
       "search rescue"
     );
+    expect(normalizeTitle("Ocean Way (Bonus)")).toBe("ocean way");
   });
 
   it("normalizes edited and abbreviated clean title variants", () => {
@@ -42,6 +43,7 @@ describe("text utilities", () => {
       "hyfr (hell ya fucking right)"
     );
     expect(normalizeTitleForSearch("Kill JAŸ-Z")).toBe("kill jay-z");
+    expect(normalizeTitleForSearch("Ocean Way (Bonus)")).toBe("ocean way");
   });
 
   it("strips simple Genius HTML bodies to readable text", () => {

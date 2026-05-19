@@ -509,6 +509,61 @@ describe("references service", () => {
     });
   });
 
+  it("strips bonus markers before searching Genius for album tracks", async () => {
+    vi.mocked(getITunesAlbumTracks).mockResolvedValueOnce({
+      value: {
+        album: {
+          ...albumResult(),
+          artist: "J. Cole",
+        },
+        tracks: [
+          {
+            ...albumTrack("track-1", "Ocean Way (Bonus)", 12),
+            artist: "J. Cole",
+          },
+        ],
+      },
+      source: "live",
+    });
+    vi.mocked(searchGeniusSongs).mockImplementation(async (query) => ({
+      value:
+        query === "J. Cole ocean way"
+          ? [
+              songResult("song-1", "Ocean Way", {
+                artist: "J. Cole",
+                metadata: {
+                  geniusId: 1,
+                  releaseYear: "2026",
+                  albumTitle: "The Fall-Off",
+                  featuredArtists: [],
+                },
+              }),
+            ]
+          : [],
+      source: "live",
+    }));
+    vi.mocked(getGeniusSongReferences).mockResolvedValue({
+      value: [referenceResult("song-1-reference")],
+      source: "live",
+    });
+
+    const payload = await getAlbumReferenceResponse("album-1");
+
+    expect(payload.tracks[0]).toMatchObject({
+      matchStatus: "matched",
+      matchedSong: {
+        id: "song-1",
+        title: "Ocean Way",
+        artist: "J. Cole",
+      },
+    });
+    expect(searchGeniusSongs).toHaveBeenNthCalledWith(
+      1,
+      "J. Cole ocean way",
+      8
+    );
+  });
+
   it("caches unmatched track searches", async () => {
     vi.mocked(getITunesAlbumTracks).mockResolvedValue({
       value: {

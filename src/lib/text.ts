@@ -6,7 +6,7 @@ const FEATURE_PATTERN =
   /\s*(?:\(|\[)?(?:feat\.?|ft\.?|with)\s+[^)\]]+(?:\)|\])?/gi;
 
 const VERSION_PATTERN =
-  /\s*(?:\(|\[)(?:clean|explicit|edit(?:ed)?|remaster(?:ed)?|radio edit|album edit|album version|bonus track|deluxe|single version)[^)\]]*(?:\)|\])/gi;
+  /\s*(?:\(|\[)(?:clean|explicit|edit(?:ed)?|remaster(?:ed)?|radio edit|album edit|album version|bonus(?: track)?|deluxe|single version)[^)\]]*(?:\)|\])/gi;
 
 const NON_WORD_PATTERN = /[^\p{L}\p{N}\s]/gu;
 
