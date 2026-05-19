@@ -318,7 +318,10 @@ function buildTrackSearchQueries(
 function buildTrackTitleSearchVariants(title: string) {
   const titleForSearch = normalizeTitleForSearch(title);
   const normalizedTitle = normalizeTitle(title);
-  const variants = [titleForSearch];
+  const variants = [
+    titleForSearch,
+    ...extractLeadingInitialismTitleVariants(title),
+  ];
 
   if (shouldAddCompactInitialismTitle(titleForSearch, normalizedTitle)) {
     variants.push(titleForSearch.replace(/[^\p{L}\p{N}]+/gu, ""));
@@ -327,6 +330,13 @@ function buildTrackTitleSearchVariants(title: string) {
   variants.push(normalizedTitle);
 
   return uniqueSearchQueries(variants);
+}
+
+function extractLeadingInitialismTitleVariants(title: string) {
+  const match = title.match(/^\s*([\p{Lu}\p{N}][\p{Lu}\p{N}.]*)(?:\s|\()/u);
+  const candidate = match?.[1]?.replace(/\.+$/u, "").toLocaleLowerCase() ?? "";
+
+  return candidate.length >= 2 && /[\p{L}]/u.test(candidate) ? [candidate] : [];
 }
 
 function shouldAddCompactInitialismTitle(

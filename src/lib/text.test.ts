@@ -24,6 +24,9 @@ describe("text utilities", () => {
     expect(normalizeTitle("Wit the S***s (W.T.S) [feat. Melii]")).toBe(
       "wit the shits w t s"
     );
+    expect(normalizeTitle("HYFR (Hell Ya F***ing Right)")).toBe(
+      "hyfr hell ya fucking right"
+    );
   });
 
   it("keeps punctuation that improves external title search", () => {
@@ -34,6 +37,9 @@ describe("text utilities", () => {
     expect(
       normalizeTitleForSearch("Wit the S***s (W.T.S) [feat. Melii]")
     ).toBe("wit the shits (w.t.s)");
+    expect(normalizeTitleForSearch("HYFR (Hell Ya F***ing Right)")).toBe(
+      "hyfr (hell ya fucking right)"
+    );
   });
 
   it("strips simple Genius HTML bodies to readable text", () => {

@@ -397,6 +397,68 @@ describe("references service", () => {
     );
   });
 
+  it("falls back to leading initialism queries for censored long titles", async () => {
+    vi.mocked(getITunesAlbumTracks).mockResolvedValueOnce({
+      value: {
+        album: {
+          ...albumResult(),
+          artist: "Drake",
+        },
+        tracks: [
+          {
+            ...albumTrack(
+              "track-1",
+              "HYFR (Hell Ya F***ing Right) [feat. Lil Wayne]",
+              16
+            ),
+            artist: "Drake",
+          },
+        ],
+      },
+      source: "live",
+    });
+    vi.mocked(searchGeniusSongs).mockImplementation(async (query) => ({
+      value:
+        query === "Drake hyfr"
+          ? [
+              songResult("song-1", "HYFR (Hell Ya Fucking Right)", {
+                artist: "Drake",
+                metadata: {
+                  geniusId: 1,
+                  releaseYear: "2011",
+                  albumTitle: "Take Care",
+                  featuredArtists: ["Lil Wayne"],
+                },
+              }),
+            ]
+          : [],
+      source: "live",
+    }));
+    vi.mocked(getGeniusSongReferences).mockResolvedValue({
+      value: [referenceResult("song-1-reference")],
+      source: "live",
+    });
+
+    const payload = await getAlbumReferenceResponse("album-1");
+
+    expect(payload.tracks[0]).toMatchObject({
+      matchStatus: "matched",
+      matchedSong: {
+        id: "song-1",
+        title: "HYFR (Hell Ya Fucking Right)",
+        artist: "Drake",
+      },
+    });
+    expect(searchGeniusSongs).toHaveBeenCalledWith("Drake hyfr", 8);
+    expect(getGeniusSongReferences).toHaveBeenCalledWith(
+      "song-1",
+      expect.objectContaining({
+        title: "HYFR (Hell Ya Fucking Right)",
+        artist: "Drake",
+      })
+    );
+  });
+
   it("caches unmatched track searches", async () => {
     vi.mocked(getITunesAlbumTracks).mockResolvedValue({
       value: {
