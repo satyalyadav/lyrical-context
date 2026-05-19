@@ -140,9 +140,7 @@ export function truncateText(value: string, maxLength: number) {
 export function normalizeTitle(value: string) {
   return compactWhitespace(
     applyTitleAliases(
-      value
-        .normalize("NFKD")
-        .replace(/[\u0300-\u036f]/g, "")
+      stripDiacritics(value)
         .toLocaleLowerCase()
         .replace(FEATURE_PATTERN, "")
         .replace(VERSION_PATTERN, "")
@@ -153,9 +151,7 @@ export function normalizeTitle(value: string) {
 export function normalizeTitleForSearch(value: string) {
   return compactWhitespace(
     applyTitleAliases(
-      value
-        .normalize("NFKD")
-        .replace(/[\u0300-\u036f]/g, "")
+      stripDiacritics(value)
         .toLocaleLowerCase()
         .replace(FEATURE_PATTERN, "")
         .replace(VERSION_PATTERN, "")
@@ -165,9 +161,7 @@ export function normalizeTitleForSearch(value: string) {
 
 export function normalizeArtist(value: string) {
   return compactWhitespace(
-    value
-      .normalize("NFKD")
-      .replace(/[\u0300-\u036f]/g, "")
+    stripDiacritics(value)
       .toLocaleLowerCase()
       .replace(/\band\b/g, "&")
       .replace(NON_WORD_PATTERN, " ")
@@ -216,4 +210,8 @@ function applyTitleAliases(value: string) {
     (current, [pattern, replacement]) => current.replace(pattern, replacement),
     value
   );
+}
+
+function stripDiacritics(value: string) {
+  return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
 }
