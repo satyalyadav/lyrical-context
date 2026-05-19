@@ -27,6 +27,7 @@ describe("text utilities", () => {
     expect(normalizeTitle("HYFR (Hell Ya F***ing Right)")).toBe(
       "hyfr hell ya fucking right"
     );
+    expect(normalizeTitle("Kill JAŸ-Z")).toBe("kill jay z");
   });
 
   it("keeps punctuation that improves external title search", () => {
@@ -40,6 +41,7 @@ describe("text utilities", () => {
     expect(normalizeTitleForSearch("HYFR (Hell Ya F***ing Right)")).toBe(
       "hyfr (hell ya fucking right)"
     );
+    expect(normalizeTitleForSearch("Kill JAŸ-Z")).toBe("kill jay-z");
   });
 
   it("strips simple Genius HTML bodies to readable text", () => {

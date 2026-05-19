@@ -141,6 +141,8 @@ export function normalizeTitle(value: string) {
   return compactWhitespace(
     applyTitleAliases(
       value
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
         .toLocaleLowerCase()
         .replace(FEATURE_PATTERN, "")
         .replace(VERSION_PATTERN, "")
@@ -152,6 +154,8 @@ export function normalizeTitleForSearch(value: string) {
   return compactWhitespace(
     applyTitleAliases(
       value
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
         .toLocaleLowerCase()
         .replace(FEATURE_PATTERN, "")
         .replace(VERSION_PATTERN, "")
@@ -161,7 +165,12 @@ export function normalizeTitleForSearch(value: string) {
 
 export function normalizeArtist(value: string) {
   return compactWhitespace(
-    value.toLocaleLowerCase().replace(/\band\b/g, "&").replace(NON_WORD_PATTERN, " ")
+    value
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase()
+      .replace(/\band\b/g, "&")
+      .replace(NON_WORD_PATTERN, " ")
   );
 }
 
