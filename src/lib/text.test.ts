@@ -21,6 +21,9 @@ describe("text utilities", () => {
     );
     expect(normalizeTitle("Gangsta B's")).toBe("gangsta bitches");
     expect(normalizeTitle("A*****e (feat. Skylar Grey)")).toBe("asshole");
+    expect(normalizeTitle("Wit the S***s (W.T.S) [feat. Melii]")).toBe(
+      "wit the shits w t s"
+    );
   });
 
   it("keeps punctuation that improves external title search", () => {
@@ -28,6 +31,9 @@ describe("text utilities", () => {
     expect(normalizeTitleForSearch("A*****e (feat. Skylar Grey)")).toBe(
       "asshole"
     );
+    expect(
+      normalizeTitleForSearch("Wit the S***s (W.T.S) [feat. Melii]")
+    ).toBe("wit the shits (w.t.s)");
   });
 
   it("strips simple Genius HTML bodies to readable text", () => {

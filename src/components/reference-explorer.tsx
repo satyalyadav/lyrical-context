@@ -1212,6 +1212,10 @@ function renderSafeAnnotationNode(node: SafeAnnotationNode): ReactNode {
     return node.text;
   }
 
+  if (SAFE_VOID_ANNOTATION_TAGS.has(node.tag)) {
+    return createElement(node.tag, { ...node.props, key: node.key });
+  }
+
   return createElement(
     node.tag,
     { ...node.props, key: node.key },

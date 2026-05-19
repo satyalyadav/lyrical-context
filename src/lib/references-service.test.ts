@@ -342,6 +342,61 @@ describe("references service", () => {
     );
   });
 
+  it("matches censored explicit titles against uncensored Genius titles", async () => {
+    vi.mocked(getITunesAlbumTracks).mockResolvedValueOnce({
+      value: {
+        album: {
+          ...albumResult(),
+          artist: "Meek Mill",
+        },
+        tracks: [
+          {
+            ...albumTrack("track-1", "Wit the S***s (W.T.S) [feat. Melii]", 16),
+            artist: "Meek Mill",
+          },
+        ],
+      },
+      source: "live",
+    });
+    vi.mocked(searchGeniusSongs).mockImplementation(async (query) => ({
+      value:
+        query === "Meek Mill wit the shits (w.t.s)"
+          ? [
+              songResult("song-1", "Wit the Shits (W.T.S)", {
+                artist: "Meek Mill",
+                metadata: {
+                  geniusId: 1,
+                  releaseYear: "2018",
+                  albumTitle: "Championships",
+                  featuredArtists: ["Melii"],
+                },
+              }),
+            ]
+          : [],
+      source: "live",
+    }));
+    vi.mocked(getGeniusSongReferences).mockResolvedValue({
+      value: [referenceResult("song-1-reference")],
+      source: "live",
+    });
+
+    const payload = await getAlbumReferenceResponse("album-1");
+
+    expect(payload.tracks[0]).toMatchObject({
+      matchStatus: "matched",
+      matchedSong: {
+        id: "song-1",
+        title: "Wit the Shits (W.T.S)",
+        artist: "Meek Mill",
+      },
+    });
+    expect(searchGeniusSongs).toHaveBeenNthCalledWith(
+      1,
+      "Meek Mill wit the shits (w.t.s)",
+      8
+    );
+  });
+
   it("caches unmatched track searches", async () => {
     vi.mocked(getITunesAlbumTracks).mockResolvedValue({
       value: {

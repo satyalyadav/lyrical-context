@@ -627,6 +627,75 @@ describe("ReferenceExplorer", () => {
     expect(await screen.findByText("An unverified line")).toBeVisible();
   });
 
+  it("renders safe annotation images without passing children to void tags", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              type: "song",
+              id: "123",
+              title: "Image Annotation",
+              artist: "Test Artist",
+              artworkUrl: null,
+              sourceUrl: "https://genius.com/song",
+              metadata: { geniusId: 123 },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          song: {
+            type: "song",
+            id: "123",
+            title: "Image Annotation",
+            artist: "Test Artist",
+            artworkUrl: null,
+            sourceUrl: "https://genius.com/song",
+            metadata: { geniusId: 123 },
+          },
+          references: [
+            {
+              id: "1",
+              referentId: "10",
+              sortIndex: 0,
+              fragment: "Annotated image line",
+              annotation: "Annotation with image.",
+              annotationHtml:
+                '<p>Annotation with image.</p><figure><img src="https://images.genius.com/test.jpg" alt="Studio photo"></figure>',
+              sourceUrl: "https://genius.com/annotation",
+              state: "accepted",
+              classification: "accepted",
+              verified: false,
+              votesTotal: 12,
+              categories: ["verified-accepted"],
+            },
+          ],
+          source: "live",
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReferenceExplorer />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText("e.g. God's Plan"),
+      "image annotation"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Image Annotation/i })
+    );
+
+    expect(await screen.findByText("Annotation with image.")).toBeVisible();
+    expect(screen.getByAltText("Studio photo")).toHaveAttribute(
+      "src",
+      "https://images.genius.com/test.jpg"
+    );
+  });
+
   it("keeps album track references collapsed until a track is opened", async () => {
     const fetchMock = vi
       .fn()

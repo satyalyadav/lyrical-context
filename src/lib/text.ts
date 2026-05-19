@@ -13,6 +13,7 @@ const NON_WORD_PATTERN = /[^\p{L}\p{N}\s]/gu;
 const TITLE_ALIAS_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\ba\*+e\b/gi, "asshole"],
   [/\bb['’]?s\b/gi, "bitches"],
+  [/\bs\*+s\b/gi, "shits"],
 ];
 
 const DISS_TERMS = [
