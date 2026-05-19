@@ -16,7 +16,8 @@ type JsonCacheEntry = CacheRow & {
 
 type CacheBackend =
   | { kind: "sqlite"; db: SqliteDatabase }
-  | { kind: "json"; filePath: string; entries: Record<string, JsonCacheEntry> };
+  | { kind: "json"; filePath: string; entries: Record<string, JsonCacheEntry> }
+  | { kind: "memory"; entries: Record<string, JsonCacheEntry> };
 
 let backend: CacheBackend | null = null;
 const nodeRequire = createRequire(import.meta.url);
@@ -26,13 +27,10 @@ export function getCacheBackend() {
     return backend;
   }
 
-  const dbPath =
-    process.env.LYRICAL_CONTEXT_DB_PATH ??
-    path.join(process.cwd(), ".data", "lyrical-context.sqlite");
-
-  mkdirSync(path.dirname(dbPath), { recursive: true });
+  const dbPath = getDefaultCachePath();
 
   try {
+    mkdirSync(path.dirname(dbPath), { recursive: true });
     const Database = nodeRequire("better-sqlite3") as typeof import("better-sqlite3");
     const db = new Database(dbPath);
     db.pragma("journal_mode = WAL");
@@ -57,11 +55,19 @@ export function getCacheBackend() {
   }
 
   const filePath = dbPath.replace(/\.sqlite$/i, ".json");
-  backend = {
-    kind: "json",
-    filePath,
-    entries: readJsonCache(filePath),
-  };
+  try {
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    backend = {
+      kind: "json",
+      filePath,
+      entries: readJsonCache(filePath),
+    };
+  } catch {
+    backend = {
+      kind: "memory",
+      entries: {},
+    };
+  }
 
   return backend;
 }
@@ -83,9 +89,11 @@ export function getCachedJson<T>(key: string): T | null {
   if (row.expires_at <= now) {
     if (cacheBackend.kind === "sqlite") {
       cacheBackend.db.prepare("DELETE FROM cache_entries WHERE key = ?").run(key);
-    } else {
+    } else if (cacheBackend.kind === "json") {
       delete cacheBackend.entries[key];
       writeJsonCache(cacheBackend.filePath, cacheBackend.entries);
+    } else {
+      delete cacheBackend.entries[key];
     }
 
     return null;
@@ -119,7 +127,9 @@ export function setCachedJson<T>(key: string, value: T, ttlSeconds: number) {
     expires_at: expiresAt,
     created_at: now,
   };
-  writeJsonCache(cacheBackend.filePath, cacheBackend.entries);
+  if (cacheBackend.kind === "json") {
+    writeJsonCache(cacheBackend.filePath, cacheBackend.entries);
+  }
 }
 
 export async function withJsonCache<T>(
@@ -127,14 +137,27 @@ export async function withJsonCache<T>(
   ttlSeconds: number,
   loader: () => Promise<T>
 ): Promise<{ value: T; source: "cache" | "live" }> {
-  const cached = getCachedJson<T>(key);
+  const cached = (() => {
+    try {
+      return getCachedJson<T>(key);
+    } catch {
+      resetCacheForTests();
+      return null;
+    }
+  })();
 
   if (cached !== null) {
     return { value: cached, source: "cache" };
   }
 
   const value = await loader();
-  setCachedJson(key, value, ttlSeconds);
+
+  try {
+    setCachedJson(key, value, ttlSeconds);
+  } catch {
+    resetCacheForTests();
+  }
+
   return { value, source: "live" };
 }
 
@@ -159,6 +182,18 @@ function readJsonCache(filePath: string): Record<string, JsonCacheEntry> {
   } catch {
     return {};
   }
+}
+
+function getDefaultCachePath() {
+  if (process.env.LYRICAL_CONTEXT_DB_PATH) {
+    return process.env.LYRICAL_CONTEXT_DB_PATH;
+  }
+
+  if (process.env.VERCEL === "1") {
+    return path.join("/tmp", "lyrical-context.sqlite");
+  }
+
+  return path.join(process.cwd(), ".data", "lyrical-context.sqlite");
 }
 
 function writeJsonCache(

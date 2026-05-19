@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   getCachedJson,
@@ -22,6 +22,7 @@ describe("SQLite JSON cache", () => {
   afterEach(() => {
     resetCacheForTests();
     delete process.env.LYRICAL_CONTEXT_DB_PATH;
+    vi.unstubAllEnvs();
   });
 
   it("stores and reads JSON values", () => {
@@ -40,5 +41,15 @@ describe("SQLite JSON cache", () => {
 
     expect(first).toEqual({ source: "live", value: { value: 1 } });
     expect(second).toEqual({ source: "cache", value: { value: 1 } });
+  });
+
+  it("uses /tmp as the default cache location on Vercel", async () => {
+    delete process.env.LYRICAL_CONTEXT_DB_PATH;
+    vi.stubEnv("VERCEL", "1");
+    resetCacheForTests();
+
+    await withJsonCache("vercel-default", 30, async () => ({ ok: true }));
+
+    expect(getCachedJson("vercel-default")).toEqual({ ok: true });
   });
 });
