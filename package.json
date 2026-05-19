@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "better-sqlite3": "^12.10.0",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
@@ -30,9 +31,9 @@
     "@types/sanitize-html": "^2.16.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "jsdom": "^26.1.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "jsdom": "^26.1.0",
     "vitest": "^3.2.4"
   }
 }
