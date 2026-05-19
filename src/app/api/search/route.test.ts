@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resetApiGuardForTests } from "@/lib/api-guard";
 import { search } from "@/lib/references-service";
 import { GET } from "./route";
 
@@ -8,6 +9,15 @@ vi.mock("@/lib/references-service", () => ({
 }));
 
 describe("GET /api/search", () => {
+  beforeEach(() => {
+    resetApiGuardForTests();
+    delete process.env.LYRICAL_CONTEXT_API_KEY;
+  });
+
+  afterEach(() => {
+    resetApiGuardForTests();
+    delete process.env.LYRICAL_CONTEXT_API_KEY;
+  });
   it("rejects invalid search types", async () => {
     const response = await GET(new Request("http://app.test/api/search?type=bad"));
     const body = await response.json();
@@ -37,5 +47,20 @@ describe("GET /api/search", () => {
     expect(response.status).toBe(200);
     expect(body.results[0].title).toBe("God's Plan");
     expect(search).toHaveBeenCalledWith("song", "drake");
+  });
+
+  it("rejects incorrect bearer tokens when an API key is configured", async () => {
+    process.env.LYRICAL_CONTEXT_API_KEY = "secret";
+
+    const response = await GET(
+      new Request("http://app.test/api/search?type=song&q=drake", {
+        headers: { authorization: "Bearer wrong" },
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.error.code).toBe("unauthorized");
+    expect(search).not.toHaveBeenCalled();
   });
 });

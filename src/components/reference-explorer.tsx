@@ -28,6 +28,7 @@ import {
 } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 
+import { getApiRequestHeaders } from "@/lib/api-client";
 import type {
   AlbumReferenceResponse,
   ApiErrorBody,
@@ -62,6 +63,13 @@ type DetailState =
       data: AlbumReferenceResponse;
     }
   | { type: "error"; result: SearchResult; message: string };
+
+type UsageBudgetStatus = {
+  limit: number;
+  remaining: number;
+  resetAt: string;
+  state: "ok" | "warning" | "blocked";
+};
 
 const FILTERS: Array<{
   value: ReferenceFilter;
@@ -101,6 +109,7 @@ type ExplorerState = {
   loadingMessage: string;
   detail: DetailState;
   filter: ReferenceFilter;
+  budget: UsageBudgetStatus | null;
 };
 
 type ExplorerAction =
@@ -114,7 +123,8 @@ type ExplorerAction =
   | { type: "open-result-started"; result: SearchResult; message: string }
   | { type: "set-detail"; detail: DetailState }
   | { type: "set-loading-message"; message: string }
-  | { type: "set-filter"; filter: ReferenceFilter };
+  | { type: "set-filter"; filter: ReferenceFilter }
+  | { type: "set-budget"; budget: UsageBudgetStatus };
 
 const INITIAL_EXPLORER_STATE: ExplorerState = {
   searchType: "song",
@@ -123,6 +133,7 @@ const INITIAL_EXPLORER_STATE: ExplorerState = {
   loadingMessage: "",
   detail: { type: "idle" },
   filter: "verified-accepted",
+  budget: null,
 };
 
 function explorerReducer(
@@ -182,6 +193,11 @@ function explorerReducer(
       return {
         ...state,
         filter: action.filter,
+      };
+    case "set-budget":
+      return {
+        ...state,
+        budget: action.budget,
       };
   }
 }
@@ -278,8 +294,15 @@ export function ReferenceExplorer() {
     song: "",
     album: "",
   });
-  const { detail, filter, loadingMessage, searchState, searchType, selectedKey } =
-    state;
+  const {
+    budget,
+    detail,
+    filter,
+    loadingMessage,
+    searchState,
+    searchType,
+    selectedKey,
+  } = state;
   const currentSearch = searchState[searchType];
   const query = currentSearch.query;
 
@@ -359,8 +382,17 @@ export function ReferenceExplorer() {
       try {
         const response = await fetch(
           `/api/search?type=${type}&q=${encodeURIComponent(trimmedQuery)}`,
-          { signal: controller.signal }
+          {
+            signal: controller.signal,
+            headers: getApiRequestHeaders(),
+          }
         );
+        const budgetStatus = parseBudgetHeaders(response.headers);
+
+        if (budgetStatus) {
+          dispatch({ type: "set-budget", budget: budgetStatus });
+        }
+
         const payload = await parseResponse<{ results: SearchResult[] }>(
           response
         );
@@ -486,7 +518,14 @@ export function ReferenceExplorer() {
               sourceUrl: result.sourceUrl,
             }).toString()}`
           : `/api/albums/${result.id}/references`;
-      const response = await fetch(endpoint);
+      const response = await fetch(endpoint, {
+        headers: getApiRequestHeaders(),
+      });
+      const budgetStatus = parseBudgetHeaders(response.headers);
+
+      if (budgetStatus) {
+        dispatch({ type: "set-budget", budget: budgetStatus });
+      }
 
       if (result.type === "song") {
         const data = await parseResponse<SongReferenceResponse>(response);
@@ -512,6 +551,7 @@ export function ReferenceExplorer() {
   return (
     <main className="min-h-screen bg-[#fbf9f4] text-[#1b1c19] lg:flex lg:h-screen lg:overflow-hidden">
       <SearchSidebar
+        budget={budget}
         currentSearch={currentSearch}
         searchType={searchType}
         selectedKey={selectedKey}
@@ -537,6 +577,7 @@ export function ReferenceExplorer() {
 }
 
 function SearchSidebar({
+  budget,
   currentSearch,
   searchType,
   selectedKey,
@@ -545,6 +586,7 @@ function SearchSidebar({
   onSearchTypeChange,
   onSubmit,
 }: {
+  budget: UsageBudgetStatus | null;
   currentSearch: SearchPanelState;
   searchType: SearchType;
   selectedKey: string | null;
@@ -605,6 +647,7 @@ function SearchSidebar({
           </div>
         </form>
 
+        <BudgetNotice budget={budget} />
         {error ? <InlineError message={error} /> : null}
       </div>
 
@@ -1474,6 +1517,35 @@ function SearchEmptyState({
   );
 }
 
+function BudgetNotice({ budget }: { budget: UsageBudgetStatus | null }) {
+  if (!budget || budget.state === "ok") {
+    return null;
+  }
+
+  const blocked = budget.state === "blocked";
+
+  return (
+    <div
+      className={`mt-3 flex items-start gap-2 rounded border p-3 text-sm ${
+        blocked
+          ? "border-[#ba1a1a]/30 bg-[#ffdad6]/40 text-[#93000a]"
+          : "border-[#8a6b16]/30 bg-[#fff4cc]/70 text-[#594500]"
+      }`}
+    >
+      <AlertCircle className="mt-0.5 size-4 shrink-0" />
+      <span>
+        {blocked
+          ? `The shared Genius API budget is cooling down. Searches resume around ${formatBudgetReset(
+              budget.resetAt
+            )}.`
+          : `The shared Genius API budget is low (${budget.remaining} of ${budget.limit} left). It resets around ${formatBudgetReset(
+              budget.resetAt
+            )}.`}
+      </span>
+    </div>
+  );
+}
+
 function InlineError({ message }: { message: string }) {
   return (
     <div className="mt-3 flex items-start gap-2 rounded border border-[#ba1a1a]/30 bg-[#ffdad6]/40 p-3 text-sm text-[#93000a]">
@@ -1601,6 +1673,39 @@ async function parseResponse<T>(response: Response): Promise<T> {
   }
 
   return payload as T;
+}
+
+function parseBudgetHeaders(headers: Headers): UsageBudgetStatus | null {
+  const state = headers.get("x-lyrical-budget-state");
+  const limit = Number(headers.get("x-lyrical-budget-limit"));
+  const remaining = Number(headers.get("x-lyrical-budget-remaining"));
+  const resetAt = headers.get("x-lyrical-budget-reset-at");
+
+  if (
+    state !== "ok" &&
+    state !== "warning" &&
+    state !== "blocked"
+  ) {
+    return null;
+  }
+
+  if (!Number.isFinite(limit) || !Number.isFinite(remaining) || !resetAt) {
+    return null;
+  }
+
+  return {
+    limit,
+    remaining,
+    resetAt,
+    state,
+  };
+}
+
+function formatBudgetReset(resetAt: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(resetAt));
 }
 
 function publicMessage(error: unknown) {

@@ -1,3 +1,5 @@
+import { assertApiAccess } from "@/lib/api-guard";
+import { jsonWithBudgetHeaders } from "@/lib/api-response";
 import { toPublicError, LyricalContextError } from "@/lib/errors";
 import { search } from "@/lib/references-service";
 import type { SearchType } from "@/lib/types";
@@ -7,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
+    await assertApiAccess(request);
+
     const url = new URL(request.url);
     const type = url.searchParams.get("type");
     const query = url.searchParams.get("q") ?? "";
@@ -21,9 +25,11 @@ export async function GET(request: Request) {
 
     const results = await search(type as SearchType, query);
 
-    return Response.json({ results });
+    return jsonWithBudgetHeaders({ results });
   } catch (error) {
     const publicError = toPublicError(error);
-    return Response.json(publicError.body, { status: publicError.status });
+    return jsonWithBudgetHeaders(publicError.body, {
+      status: publicError.status,
+    });
   }
 }

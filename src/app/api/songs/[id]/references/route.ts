@@ -1,3 +1,5 @@
+import { assertApiAccess } from "@/lib/api-guard";
+import { jsonWithBudgetHeaders } from "@/lib/api-response";
 import { toPublicError } from "@/lib/errors";
 import { getSongReferenceResponse } from "@/lib/references-service";
 
@@ -10,6 +12,8 @@ type SongReferenceContext = {
 
 export async function GET(request: Request, context: SongReferenceContext) {
   try {
+    await assertApiAccess(request);
+
     const { id } = await context.params;
     const url = new URL(request.url);
     const payload = await getSongReferenceResponse(id, {
@@ -19,9 +23,11 @@ export async function GET(request: Request, context: SongReferenceContext) {
       sourceUrl: url.searchParams.get("sourceUrl"),
     });
 
-    return Response.json(payload);
+    return jsonWithBudgetHeaders(payload);
   } catch (error) {
     const publicError = toPublicError(error);
-    return Response.json(publicError.body, { status: publicError.status });
+    return jsonWithBudgetHeaders(publicError.body, {
+      status: publicError.status,
+    });
   }
 }

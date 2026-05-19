@@ -2,6 +2,7 @@ import "server-only";
 
 import { LyricalContextError } from "@/lib/errors";
 import { withJsonCache } from "@/lib/cache";
+import { consumeGeniusBudget } from "@/lib/usage-budget";
 import {
   detectReferenceCategories,
   sanitizeAnnotationHtml,
@@ -867,6 +868,8 @@ async function geniusRequest<T>(path: string): Promise<T> {
       500
     );
   }
+
+  await consumeGeniusBudget();
 
   const response = await fetch(`${GENIUS_API_BASE}${path}`, {
     cache: "no-store",

@@ -7,18 +7,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-class ResizeObserverMock {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+if (typeof window !== "undefined") {
+  class ResizeObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+
+  Object.defineProperty(window, "ResizeObserver", {
+    writable: true,
+    configurable: true,
+    value: ResizeObserverMock,
+  });
+
+  Element.prototype.getAnimations = function getAnimations() {
+    return [];
+  };
 }
-
-Object.defineProperty(window, "ResizeObserver", {
-  writable: true,
-  configurable: true,
-  value: ResizeObserverMock,
-});
-
-Element.prototype.getAnimations = function getAnimations() {
-  return [];
-};

@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resetApiGuardForTests } from "@/lib/api-guard";
 import { getSongReferenceResponse } from "@/lib/references-service";
 import { GET } from "./route";
 
@@ -8,6 +9,15 @@ vi.mock("@/lib/references-service", () => ({
 }));
 
 describe("GET /api/songs/[id]/references", () => {
+  beforeEach(() => {
+    resetApiGuardForTests();
+    delete process.env.LYRICAL_CONTEXT_API_KEY;
+  });
+
+  afterEach(() => {
+    resetApiGuardForTests();
+    delete process.env.LYRICAL_CONTEXT_API_KEY;
+  });
   it("passes dynamic id and fallback metadata to the service", async () => {
     vi.mocked(getSongReferenceResponse).mockResolvedValueOnce({
       song: {

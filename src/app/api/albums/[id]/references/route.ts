@@ -1,3 +1,5 @@
+import { assertApiAccess } from "@/lib/api-guard";
+import { jsonWithBudgetHeaders } from "@/lib/api-response";
 import { toPublicError } from "@/lib/errors";
 import { getAlbumReferenceResponse } from "@/lib/references-service";
 
@@ -8,14 +10,18 @@ type AlbumReferenceContext = {
   params: Promise<{ id: string }>;
 };
 
-export async function GET(_request: Request, context: AlbumReferenceContext) {
+export async function GET(request: Request, context: AlbumReferenceContext) {
   try {
+    await assertApiAccess(request);
+
     const { id } = await context.params;
     const payload = await getAlbumReferenceResponse(id);
 
-    return Response.json(payload);
+    return jsonWithBudgetHeaders(payload);
   } catch (error) {
     const publicError = toPublicError(error);
-    return Response.json(publicError.body, { status: publicError.status });
+    return jsonWithBudgetHeaders(publicError.body, {
+      status: publicError.status,
+    });
   }
 }
