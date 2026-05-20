@@ -5,8 +5,6 @@ import {
   API_SESSION_COOKIE,
   createApiSessionToken,
 } from "@/lib/api-session";
-import { LyricalContextError } from "@/lib/errors";
-
 describe("assertApiAccess", () => {
   beforeEach(() => {
     resetApiGuardForTests();
@@ -50,7 +48,7 @@ describe("assertApiAccess", () => {
         })
       )
     ).rejects.toThrowError(
-      expect.objectContaining<LyricalContextError>({
+      expect.objectContaining({
         code: "unauthorized",
         status: 401,
       })
@@ -84,7 +82,7 @@ describe("assertApiAccess", () => {
         })
       )
     ).rejects.toThrowError(
-      expect.objectContaining<LyricalContextError>({
+      expect.objectContaining({
         code: "forbidden",
         status: 403,
       })
@@ -108,7 +106,7 @@ describe("assertApiAccess", () => {
         })
       )
     ).rejects.toThrowError(
-      expect.objectContaining<LyricalContextError>({
+      expect.objectContaining({
         code: "forbidden",
         status: 403,
       })
@@ -145,7 +143,7 @@ describe("assertApiAccess", () => {
     }
 
     await expect(assertApiAccess(request)).rejects.toThrowError(
-      expect.objectContaining<LyricalContextError>({
+      expect.objectContaining({
         code: "rate_limited",
         status: 429,
       })

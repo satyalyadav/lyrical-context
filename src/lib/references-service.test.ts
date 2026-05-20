@@ -98,9 +98,13 @@ describe("references service", () => {
   });
 
   it("overlaps reference loading with remaining track matching while preserving order", async () => {
-    let resolveSecondSearch:
-      | ((payload: { value: SongSearchResult[]; source: "live" }) => void)
-      | null = null;
+    type ResolveSecondSearch = (payload: {
+      value: SongSearchResult[];
+      source: "live";
+    }) => void;
+    const secondSearchBridge: { resolve: ResolveSecondSearch | null } = {
+      resolve: null,
+    };
     let secondSearchResolved = false;
     let referenceStartedBeforeSecondMatch = false;
     let signalReferenceStarted: (() => void) | null = null;
@@ -124,7 +128,7 @@ describe("references service", () => {
 
       if (normalizedQuery.includes("second song")) {
         return new Promise((resolve) => {
-          resolveSecondSearch = (payload) => {
+          secondSearchBridge.resolve = (payload) => {
             secondSearchResolved = true;
             resolve(payload);
           };
@@ -143,7 +147,7 @@ describe("references service", () => {
     vi.mocked(getGeniusSongReferences).mockImplementation(async () => {
       if (!secondSearchResolved) {
         referenceStartedBeforeSecondMatch = true;
-        resolveSecondSearch?.({
+        secondSearchBridge.resolve?.({
           value: [songResult("song-Second Song", "Second Song")],
           source: "live",
         });
@@ -163,7 +167,7 @@ describe("references service", () => {
         ),
       ]);
     } finally {
-      resolveSecondSearch?.({
+      secondSearchBridge.resolve?.({
         value: [songResult("song-Second Song", "Second Song")],
         source: "live",
       });

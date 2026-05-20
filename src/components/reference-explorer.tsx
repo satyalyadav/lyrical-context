@@ -14,6 +14,7 @@ import {
   Search,
   Target,
   UserRoundSearch,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import Image from "next/image";
@@ -110,6 +111,7 @@ type ExplorerState = {
   loadingMessage: string;
   detail: DetailState;
   filter: ReferenceFilter;
+  lyricQuery: string;
   budget: UsageBudgetStatus | null;
 };
 
@@ -125,6 +127,7 @@ type ExplorerAction =
   | { type: "set-detail"; detail: DetailState }
   | { type: "set-loading-message"; message: string }
   | { type: "set-filter"; filter: ReferenceFilter }
+  | { type: "set-lyric-query"; query: string }
   | { type: "set-budget"; budget: UsageBudgetStatus };
 
 const INITIAL_EXPLORER_STATE: ExplorerState = {
@@ -134,6 +137,7 @@ const INITIAL_EXPLORER_STATE: ExplorerState = {
   loadingMessage: "",
   detail: { type: "idle" },
   filter: "verified-accepted",
+  lyricQuery: "",
   budget: null,
 };
 
@@ -179,6 +183,7 @@ function explorerReducer(
         loadingMessage: action.message,
         detail: { type: "loading", result: action.result },
         filter: "verified-accepted",
+        lyricQuery: "",
       };
     case "set-detail":
       return {
@@ -194,6 +199,11 @@ function explorerReducer(
       return {
         ...state,
         filter: action.filter,
+      };
+    case "set-lyric-query":
+      return {
+        ...state,
+        lyricQuery: action.query,
       };
     case "set-budget":
       return {
@@ -299,6 +309,7 @@ export function ReferenceExplorer() {
     budget,
     detail,
     filter,
+    lyricQuery,
     loadingMessage,
     searchState,
     searchType,
@@ -322,6 +333,11 @@ export function ReferenceExplorer() {
   const filteredReferences = useMemo(
     () => filterReferences(allReferences, filter),
     [allReferences, filter]
+  );
+
+  const searchedReferences = useMemo(
+    () => searchReferences(filteredReferences, lyricQuery),
+    [filteredReferences, lyricQuery]
   );
 
   const filterCounts = useMemo(() => {
@@ -568,10 +584,17 @@ export function ReferenceExplorer() {
         detail={detail}
         filter={filter}
         filterCounts={filterCounts}
-        filteredReferences={filteredReferences}
+        filteredReferences={searchedReferences}
+        lyricQuery={lyricQuery}
         loadingMessage={loadingMessage}
         onFilterChange={(nextFilter) =>
           dispatch({ type: "set-filter", filter: nextFilter })
+        }
+        onLyricQueryChange={(event) =>
+          dispatch({ type: "set-lyric-query", query: event.target.value })
+        }
+        onLyricQueryClear={() =>
+          dispatch({ type: "set-lyric-query", query: "" })
         }
       />
     </main>
@@ -720,15 +743,21 @@ function WorkspacePanel({
   filter,
   filterCounts,
   filteredReferences,
+  lyricQuery,
   loadingMessage,
   onFilterChange,
+  onLyricQueryChange,
+  onLyricQueryClear,
 }: {
   detail: DetailState;
   filter: ReferenceFilter;
   filterCounts: Record<ReferenceFilter, number>;
   filteredReferences: Reference[];
+  lyricQuery: string;
   loadingMessage: string;
   onFilterChange: (filter: ReferenceFilter) => void;
+  onLyricQueryChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onLyricQueryClear: () => void;
 }) {
   return (
     <section className="min-w-0 flex-1 lg:h-screen lg:overflow-y-auto">
@@ -744,7 +773,10 @@ function WorkspacePanel({
           filter={filter}
           filterCounts={filterCounts}
           filteredReferences={filteredReferences}
+          lyricQuery={lyricQuery}
           onFilterChange={onFilterChange}
+          onLyricQueryChange={onLyricQueryChange}
+          onLyricQueryClear={onLyricQueryClear}
         />
       )}
     </section>
@@ -820,13 +852,19 @@ function ReferenceWorkspace({
   filter,
   filterCounts,
   filteredReferences,
+  lyricQuery,
   onFilterChange,
+  onLyricQueryChange,
+  onLyricQueryClear,
 }: {
   detail: Extract<DetailState, { type: "song" | "album" }>;
   filter: ReferenceFilter;
   filterCounts: Record<ReferenceFilter, number>;
   filteredReferences: Reference[];
+  lyricQuery: string;
   onFilterChange: (filter: ReferenceFilter) => void;
+  onLyricQueryChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onLyricQueryClear: () => void;
 }) {
   const result = detail.type === "song" ? detail.data.song : detail.data.album;
   const totalReferences =
@@ -906,16 +944,27 @@ function ReferenceWorkspace({
             );
           })}
         </div>
+
+        <LyricSearchBar
+          matchCount={filteredReferences.length}
+          query={lyricQuery}
+          onChange={onLyricQueryChange}
+          onClear={onLyricQueryClear}
+        />
       </header>
 
       <div className="p-6">
         <div className="mx-auto max-w-[1120px]">
           {detail.type === "song" ? (
-            <ReferenceList references={filteredReferences} />
+            <ReferenceList
+              lyricQuery={lyricQuery}
+              references={filteredReferences}
+            />
           ) : (
             <AlbumTrackList
               data={detail.data}
               filter={filter}
+              lyricQuery={lyricQuery}
             />
           )}
         </div>
@@ -927,9 +976,11 @@ function ReferenceWorkspace({
 function AlbumTrackList({
   data,
   filter,
+  lyricQuery,
 }: {
   data: AlbumReferenceResponse;
   filter: ReferenceFilter;
+  lyricQuery: string;
 }) {
   if (data.tracks.length === 0) {
     return (
@@ -940,39 +991,61 @@ function AlbumTrackList({
     );
   }
 
+  const isSearchingLyrics = hasLyricSearch(lyricQuery);
+  const trackRows = data.tracks
+    .map((group) => {
+      const categoryReferences = filterReferences(group.references, filter);
+      const references = searchReferences(categoryReferences, lyricQuery);
+
+      return { group, references };
+    })
+    .filter(({ references }) => !isSearchingLyrics || references.length > 0);
+
+  if (isSearchingLyrics && trackRows.length === 0) {
+    return (
+      <EmptyPanel
+        title="No lyric matches"
+        body="No lyric fragments match this search and filter."
+      />
+    );
+  }
+
   return (
     <div className="space-y-0">
-      {data.tracks.map((group) => {
-        const references = filterReferences(group.references, filter);
-
-        return (
-          <AlbumTrackDisclosure
-            key={trackGroupKey(group)}
-            group={group}
-            references={references}
-          />
-        );
-      })}
+      {trackRows.map(({ group, references }) => (
+        <AlbumTrackDisclosure
+          key={trackGroupKey(group)}
+          forceExpanded={isSearchingLyrics}
+          group={group}
+          lyricQuery={lyricQuery}
+          references={references}
+        />
+      ))}
     </div>
   );
 }
 
 function AlbumTrackDisclosure({
+  forceExpanded = false,
   group,
+  lyricQuery,
   references,
 }: {
+  forceExpanded?: boolean;
   group: AlbumReferenceResponse["tracks"][number];
+  lyricQuery: string;
   references: Reference[];
 }) {
   const [expanded, setExpanded] = useState(false);
+  const isExpanded = forceExpanded || expanded;
   const panelId = `album-track-panel-${group.track.id}`;
-  const Icon = expanded ? ChevronDown : ChevronRight;
+  const Icon = isExpanded ? ChevronDown : ChevronRight;
 
   return (
     <div className="border-b border-[#c8c7bf]/70 py-4">
       <button
         aria-controls={panelId}
-        aria-expanded={expanded}
+        aria-expanded={isExpanded}
         className="group flex w-full items-center gap-4 text-left"
         type="button"
         onClick={() => setExpanded((current) => !current)}
@@ -992,7 +1065,7 @@ function AlbumTrackDisclosure({
         <Icon className="size-4 shrink-0 text-[#777770]" />
       </button>
 
-      {expanded ? (
+      {isExpanded ? (
         <div
           id={panelId}
           className="ml-7 mt-4 grid gap-4 border-l border-[#7d562d]/25 pl-5 xl:grid-cols-2"
@@ -1001,6 +1074,7 @@ function AlbumTrackDisclosure({
             references.map((reference) => (
               <ReferenceCard
                 key={referenceKey(reference)}
+                lyricQuery={lyricQuery}
                 reference={reference}
               />
             ))
@@ -1041,12 +1115,64 @@ function TrackStatus({
   );
 }
 
-function ReferenceList({ references }: { references: Reference[] }) {
+function LyricSearchBar({
+  matchCount,
+  query,
+  onChange,
+  onClear,
+}: {
+  matchCount: number;
+  query: string;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onClear: () => void;
+}) {
+  const isSearching = hasLyricSearch(query);
+
+  return (
+    <div className="mx-auto mt-3 flex max-w-[1120px] flex-col gap-2 sm:flex-row sm:items-center">
+      <label className="relative min-w-0 flex-1">
+        <span className="sr-only">Search lyrics</span>
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#777770]" />
+        <input
+          className="h-10 w-full rounded-t border-0 border-b border-[#777770] bg-[#f0eee9] pl-9 pr-10 text-sm text-[#1b1c19] outline-none transition focus:border-[#181916] focus:ring-0"
+          placeholder="Search displayed lyrics"
+          value={query}
+          onChange={onChange}
+        />
+        {query ? (
+          <button
+            className="absolute right-2 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-[#777770] transition hover:bg-[#e4e2dd] hover:text-[#181916]"
+            type="button"
+            onClick={onClear}
+          >
+            <X className="size-4" />
+            <span className="sr-only">Clear lyric search</span>
+          </button>
+        ) : null}
+      </label>
+      <div className="min-h-5 text-xs font-semibold uppercase tracking-[0.08em] text-[#777770] sm:w-32 sm:text-right">
+        {isSearching ? `${matchCount} ${matchCount === 1 ? "match" : "matches"}` : null}
+      </div>
+    </div>
+  );
+}
+
+function ReferenceList({
+  lyricQuery,
+  references,
+}: {
+  lyricQuery: string;
+  references: Reference[];
+}) {
   if (!references.length) {
     return (
       <EmptyPanel
-        title="No references yet"
-        body="Genius does not have annotations for this selection or filter yet."
+        title={hasLyricSearch(lyricQuery) ? "No lyric matches" : "No references yet"}
+        body={
+          hasLyricSearch(lyricQuery)
+            ? "No lyric fragments match this search and filter."
+            : "Genius does not have annotations for this selection or filter yet."
+        }
       />
     );
   }
@@ -1054,13 +1180,23 @@ function ReferenceList({ references }: { references: Reference[] }) {
   return (
     <div className="grid gap-4 xl:grid-cols-2">
       {references.map((reference) => (
-        <ReferenceCard key={referenceKey(reference)} reference={reference} />
+        <ReferenceCard
+          key={referenceKey(reference)}
+          lyricQuery={lyricQuery}
+          reference={reference}
+        />
       ))}
     </div>
   );
 }
 
-function ReferenceCard({ reference }: { reference: Reference }) {
+function ReferenceCard({
+  lyricQuery = "",
+  reference,
+}: {
+  lyricQuery?: string;
+  reference: Reference;
+}) {
   const visibleCategories = reference.categories.filter(
     (category) => category !== "verified-accepted"
   );
@@ -1091,7 +1227,7 @@ function ReferenceCard({ reference }: { reference: Reference }) {
       </div>
 
       <blockquote className="mt-4 border-l border-[#c8c7bf] pl-4 [font-family:var(--font-literata)] text-base italic leading-7 text-[#181916]">
-        {reference.fragment}
+        <HighlightedText query={lyricQuery} text={reference.fragment} />
       </blockquote>
       <AnnotationBody reference={reference} />
       <div className="mt-4 flex items-center gap-3 border-t border-[#c8c7bf]/70 pt-3 text-xs font-medium text-[#777770]">
@@ -1102,6 +1238,34 @@ function ReferenceCard({ reference }: { reference: Reference }) {
         ) : null}
       </div>
     </article>
+  );
+}
+
+function HighlightedText({ query, text }: { query: string; text: string }) {
+  const trimmedQuery = query.trim();
+
+  if (!trimmedQuery) {
+    return text;
+  }
+
+  const queryStart = text
+    .toLocaleLowerCase()
+    .indexOf(trimmedQuery.toLocaleLowerCase());
+
+  if (queryStart < 0) {
+    return text;
+  }
+
+  const queryEnd = queryStart + trimmedQuery.length;
+
+  return (
+    <>
+      {text.slice(0, queryStart)}
+      <mark className="rounded bg-[#ffca98]/55 px-0.5 text-[#181916]">
+        {text.slice(queryStart, queryEnd)}
+      </mark>
+      {text.slice(queryEnd)}
+    </>
   );
 }
 
@@ -1644,6 +1808,22 @@ function filterReferences(references: Reference[], filter: ReferenceFilter) {
         isAcceptedReference(reference) && reference.categories.includes(filter)
     )
   );
+}
+
+function searchReferences(references: Reference[], query: string) {
+  const trimmedQuery = query.trim().toLocaleLowerCase();
+
+  if (!trimmedQuery) {
+    return references;
+  }
+
+  return references.filter((reference) =>
+    reference.fragment.toLocaleLowerCase().includes(trimmedQuery)
+  );
+}
+
+function hasLyricSearch(query: string) {
+  return query.trim().length > 0;
 }
 
 function isAcceptedReference(reference: Reference) {

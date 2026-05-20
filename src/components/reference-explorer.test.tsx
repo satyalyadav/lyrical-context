@@ -516,6 +516,91 @@ describe("ReferenceExplorer", () => {
     );
   });
 
+  it("searches displayed song lyrics and highlights the match", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              type: "song",
+              id: "3315890",
+              title: "God's Plan",
+              artist: "Drake",
+              artworkUrl: null,
+              sourceUrl: "https://genius.com/song",
+              metadata: { geniusId: 3315890 },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          song: {
+            type: "song",
+            id: "3315890",
+            title: "God's Plan",
+            artist: "Drake",
+            artworkUrl: null,
+            sourceUrl: "https://genius.com/song",
+            metadata: { geniusId: 3315890 },
+          },
+          references: [
+            {
+              id: "weston",
+              referentId: "referent-weston",
+              sortIndex: 0,
+              fragment: "I finessed down Weston Road",
+              annotation: "A reference to a Toronto street.",
+              annotationHtml: null,
+              sourceUrl: "https://genius.com/annotation/weston",
+              state: "accepted",
+              classification: "accepted",
+              verified: false,
+              votesTotal: 12,
+              categories: ["verified-accepted"],
+            },
+            {
+              id: "north",
+              referentId: "referent-north",
+              sortIndex: 1,
+              fragment: "North side line",
+              annotation: "Another reference.",
+              annotationHtml: null,
+              sourceUrl: "https://genius.com/annotation/north",
+              state: "accepted",
+              classification: "accepted",
+              verified: false,
+              votesTotal: 7,
+              categories: ["verified-accepted"],
+            },
+          ],
+          source: "live",
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReferenceExplorer />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText("e.g. God's Plan"),
+      "drake gods plan"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /God's Plan/i })
+    );
+
+    expect(await screen.findByText("I finessed down Weston Road")).toBeVisible();
+    expect(screen.getByText("North side line")).toBeVisible();
+
+    await userEvent.type(screen.getByLabelText("Search lyrics"), "weston");
+
+    expect(screen.getByText("1 match")).toBeVisible();
+    expect(screen.queryByText("North side line")).not.toBeInTheDocument();
+    expect(screen.getByText("Weston").tagName).toBe("MARK");
+  });
+
   it("switches to album search", async () => {
     render(<ReferenceExplorer />);
 
@@ -839,6 +924,134 @@ describe("ReferenceExplorer", () => {
 
     expect(await screen.findByText("A hidden line")).toBeVisible();
     expect(screen.queryByText("Another hidden line")).not.toBeInTheDocument();
+  });
+
+  it("searches album lyrics and opens matching tracks", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              type: "album",
+              id: "1406109769",
+              title: "Scorpion",
+              artist: "Drake",
+              artworkUrl: null,
+              sourceUrl: "https://music.apple.com/album",
+              metadata: {
+                collectionId: 1406109769,
+                trackCount: 2,
+                releaseYear: "2018",
+              },
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          album: {
+            type: "album",
+            id: "1406109769",
+            title: "Scorpion",
+            artist: "Drake",
+            artworkUrl: null,
+            sourceUrl: "https://music.apple.com/album",
+            metadata: {
+              collectionId: 1406109769,
+              trackCount: 2,
+              releaseYear: "2018",
+            },
+          },
+          tracks: [
+            {
+              track: {
+                id: "1",
+                title: "Matching Track",
+                artist: "Drake",
+                trackNumber: 1,
+                discNumber: 1,
+                explicitness: "explicit",
+              },
+              matchStatus: "matched",
+              matchConfidence: 1,
+              matchedSong: null,
+              references: [
+                {
+                  id: "cash",
+                  referentId: "referent-cash",
+                  sortIndex: 0,
+                  fragment: "Cash line in the hook",
+                  annotation: "A matching reference.",
+                  annotationHtml: null,
+                  sourceUrl: "https://genius.com/annotation/cash",
+                  state: "accepted",
+                  classification: "accepted",
+                  verified: false,
+                  votesTotal: 4,
+                  categories: ["verified-accepted"],
+                },
+              ],
+              error: null,
+            },
+            {
+              track: {
+                id: "2",
+                title: "Other Track",
+                artist: "Drake",
+                trackNumber: 2,
+                discNumber: 1,
+                explicitness: "explicit",
+              },
+              matchStatus: "matched",
+              matchConfidence: 0.92,
+              matchedSong: null,
+              references: [
+                {
+                  id: "other",
+                  referentId: "referent-other",
+                  sortIndex: 0,
+                  fragment: "Another lyric line",
+                  annotation: "Another reference.",
+                  annotationHtml: null,
+                  sourceUrl: "https://genius.com/annotation/other",
+                  state: "accepted",
+                  classification: "accepted",
+                  verified: false,
+                  votesTotal: 6,
+                  categories: ["verified-accepted"],
+                },
+              ],
+              error: null,
+            },
+          ],
+          source: "live",
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReferenceExplorer />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Album" }));
+    await userEvent.type(
+      screen.getByPlaceholderText("e.g. Scorpion"),
+      "scorpion"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Scorpion/i }));
+
+    await screen.findByRole("button", { name: /Matching Track/i });
+    expect(screen.queryByText("Cash line in the hook")).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Search lyrics"), "cash");
+
+    expect(screen.getByText("1 match")).toBeVisible();
+    expect(await screen.findByText("Cash")).toBeVisible();
+    expect(screen.getByText("Cash").tagName).toBe("MARK");
+    expect(screen.getByText(/line in the hook/)).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /Other Track/i })
+    ).not.toBeInTheDocument();
   });
 });
 
