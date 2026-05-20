@@ -627,7 +627,7 @@ function SearchSidebar({
   return (
     <aside className="border-b border-[#c8c7bf] bg-[#f5f3ee] lg:flex lg:h-screen lg:w-80 lg:shrink-0 lg:flex-col lg:border-b-0 lg:border-r">
       <div className="border-b border-[#c8c7bf] p-6">
-        <h1 className="mb-5 [font-family:var(--font-newsreader)] text-3xl font-medium italic tracking-tight text-[#181916]">
+        <h1 className="mb-5 cursor-default [font-family:var(--font-newsreader)] text-3xl font-medium italic tracking-tight text-[#181916]">
           Lyrical Context
         </h1>
 

@@ -207,7 +207,7 @@ export function ReportIssueDialog({
                     Send report
                   </button>
                   <button
-                    className="rounded border border-[#c8c7bf] px-4 py-2 text-sm font-medium text-[#1b1c19]"
+                    className="rounded border border-[#c8c7bf] px-4 py-2 text-sm font-medium text-[#1b1c19] transition hover:border-[#181916] hover:bg-[#e8e6e1]"
                     type="button"
                     onClick={() => setOpen(false)}
                   >
