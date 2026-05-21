@@ -228,6 +228,88 @@ ${unrelatedLines}`,
     ).toBeGreaterThan(0);
   });
 
+  it("does not let a multiline fragment's opening line steal an earlier lyric position", () => {
+    const lyrics = `Look, I was gonna go easy on you not to hurt your feelings
+But I'm only going to get this one chance
+Something's wrong, I can feel it`;
+
+    const openingLine = findFragmentLyricPosition(
+      "“Look, I was gonna go easy on you not to hurt your feelings”",
+      lyrics
+    );
+    const secondLine = findFragmentLyricPosition(
+      "“But I'm only going to get this one chance”",
+      lyrics
+    );
+    const morphinLine = findFragmentLyricPosition(
+      "But I'm\n Morphin' into an immortal, comin' through the portal",
+      lyrics
+    );
+
+    expect(openingLine).toBe(0);
+    expect(secondLine).toBeGreaterThan(openingLine!);
+    expect(morphinLine).toBeNull();
+  });
+
+  it("orders Rap God opening lines before a later multiline fragment", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url.startsWith("https://api.genius.com/referents")) {
+          return jsonResponse({
+            response: {
+              referents: [
+                geniusReferent({
+                  id: 2310153,
+                  fragment: "“Look, I was gonna go easy on you not to hurt your feelings”",
+                  annotation: "Opening line.",
+                }),
+                geniusReferent({
+                  id: 2310156,
+                  fragment: "“But I'm only going to get this one chance”",
+                  annotation: "Second opening line.",
+                }),
+                geniusReferent({
+                  id: 2312051,
+                  fragment:
+                    "But I'm\n Morphin' into an immortal, comin' through the portal",
+                  annotation: "Later verse.",
+                }),
+              ],
+            },
+          });
+        }
+
+        if (url.startsWith("https://api.lyrics.ovh/v1")) {
+          return jsonResponse({
+            lyrics: `Look, I was gonna go easy on you not to hurt your feelings
+But I'm only going to get this one chance
+Something's wrong, I can feel it`,
+          });
+        }
+
+        if (url.startsWith("https://lrclib.net/api/get")) {
+          return jsonResponse({ plainLyrics: null });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    const { value: references } = await getGeniusSongReferences("235729", {
+      title: "Rap God",
+      artist: "Eminem",
+    });
+
+    expect(references.map((reference) => reference.fragment)).toEqual([
+      "“Look, I was gonna go easy on you not to hurt your feelings”",
+      "“But I'm only going to get this one chance”",
+      "But I'm Morphin' into an immortal, comin' through the portal",
+    ]);
+  });
+
   it("orders references using another lyric source when the first one misses a fragment", async () => {
     vi.stubGlobal(
       "fetch",
@@ -240,12 +322,12 @@ ${unrelatedLines}`,
               referents: [
                 geniusReferent({
                   id: 1,
-                  fragment: "First annotated line",
+                  fragment: "First annotated lyric line here",
                   annotation: "First annotation.",
                 }),
                 geniusReferent({
                   id: 2,
-                  fragment: "Second annotated line",
+                  fragment: "Second annotated lyric line here",
                   annotation: "Second annotation.",
                 }),
               ],
@@ -255,13 +337,15 @@ ${unrelatedLines}`,
 
         if (url.startsWith("https://lrclib.net/api/get")) {
           return jsonResponse({
-            plainLyrics: "First annotated line\nUnrelated lyric source variant",
+            plainLyrics:
+              "First annotated lyric line here\nUnrelated lyric source variant",
           });
         }
 
         if (url.startsWith("https://api.lyrics.ovh/v1")) {
           return jsonResponse({
-            lyrics: "First annotated line\nSecond annotated line",
+            lyrics:
+              "First annotated lyric line here\nSecond annotated lyric line here",
           });
         }
 
@@ -275,8 +359,8 @@ ${unrelatedLines}`,
     });
 
     expect(references.map((reference) => reference.fragment)).toEqual([
-      "First annotated line",
-      "Second annotated line",
+      "First annotated lyric line here",
+      "Second annotated lyric line here",
     ]);
     expect(references[1].sortIndex).toBeLessThan(1_000_000_000);
   });

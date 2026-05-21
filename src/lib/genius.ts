@@ -18,15 +18,18 @@ const LYRICS_OVH_API_BASE = "https://api.lyrics.ovh/v1";
 const SEARCH_CACHE_VERSION = 2;
 const SEARCH_TTL_SECONDS = 60 * 60 * 24;
 const REFERENCES_TTL_SECONDS = 60 * 30;
-const REFERENCES_CACHE_VERSION = 9;
+const REFERENCES_CACHE_VERSION = 11;
 const MAX_REFERENT_PAGES = 6;
 const REFERENTS_PER_PAGE = 50;
+const GENIUS_REFERENT_TIMEOUT_MS = 15_000;
+const FUZZY_POSITION_MAX_CANDIDATES = 4;
 const ANNOTATION_SORT_BUCKET_SIZE = 1000;
 const LYRIC_POSITION_SORT_BUCKET_SIZE = 10_000;
 const FALLBACK_SORT_BASE = 1_000_000_000;
 const DEFAULT_LYRIC_LOOKUP_TIMEOUT_MS = 4000;
 const FUZZY_POSITION_MIN_TOKENS = 5;
 const FUZZY_POSITION_MIN_SIGNIFICANT_TOKENS = 2;
+const EXACT_POSITION_MIN_SIGNIFICANT_TOKENS = 4;
 const FUZZY_POSITION_MIN_SCORE = 0.8;
 const FUZZY_POSITION_MAX_TOKEN_DELTA = 2;
 const FUZZY_POSITION_MAX_ANCHOR_TOKENS = 4;
@@ -179,64 +182,42 @@ export async function getGeniusSongReferences(
 
 async function fetchGeniusReferents(songId: string) {
   const firstPageReferents = await fetchGeniusReferentPage(songId, 1);
-  const referents = [...firstPageReferents];
 
   if (firstPageReferents.length < REFERENTS_PER_PAGE) {
-    return referents;
+    return firstPageReferents;
   }
 
-  const remainingPages = Array.from(
-    { length: MAX_REFERENT_PAGES - 1 },
-    (_, index) => index + 2
-  );
-  const remainingResults = remainingPages.map((page) =>
-    fetchGeniusReferentPage(songId, page).then(
-      (value) => ({ status: "fulfilled" as const, value }),
-      (reason) => ({ status: "rejected" as const, reason })
+  const remainingPageResults = await Promise.all(
+    Array.from({ length: MAX_REFERENT_PAGES - 1 }, (_, index) =>
+      fetchGeniusReferentPage(songId, index + 2).then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (reason) => ({ status: "rejected" as const, reason })
+      )
     )
   );
+  const referents = [...firstPageReferents];
 
-  await collectGeniusReferentPages(remainingResults, referents);
+  for (const pageResult of remainingPageResults) {
+    if (pageResult.status === "rejected") {
+      throw pageResult.reason;
+    }
+
+    referents.push(...pageResult.value);
+
+    if (pageResult.value.length < REFERENTS_PER_PAGE) {
+      break;
+    }
+  }
 
   return referents;
-}
-
-async function collectGeniusReferentPages(
-  pageResults: Array<
-    Promise<
-      | { status: "fulfilled"; value: GeniusReferent[] }
-      | { status: "rejected"; reason: unknown }
-    >
-  >,
-  referents: GeniusReferent[],
-  pageIndex = 0
-): Promise<void> {
-  const pageResult = pageResults[pageIndex];
-
-  if (!pageResult) {
-    return;
-  }
-
-  const result = await pageResult;
-
-  if (result.status === "rejected") {
-    throw result.reason;
-  }
-
-  referents.push(...result.value);
-
-  if (result.value.length < REFERENTS_PER_PAGE) {
-    return;
-  }
-
-  return collectGeniusReferentPages(pageResults, referents, pageIndex + 1);
 }
 
 async function fetchGeniusReferentPage(songId: string, page: number) {
   const payload = await geniusRequest<GeniusReferentsResponse>(
     `/referents?song_id=${encodeURIComponent(
       songId
-    )}&text_format=plain,html&per_page=${REFERENTS_PER_PAGE}&page=${page}`
+    )}&text_format=plain,html&per_page=${REFERENTS_PER_PAGE}&page=${page}`,
+    GENIUS_REFERENT_TIMEOUT_MS
   );
 
   return payload.response?.referents ?? [];
@@ -536,19 +517,41 @@ function findFragmentPositionInContext(
   }
 
   const normalizedCandidates = getNormalizedFragmentPositionCandidates(fragment);
+  let bestExactMatch: { position: number; candidateLength: number } | null = null;
 
   for (const normalizedCandidate of normalizedCandidates) {
+    const candidateTokens = normalizedCandidate.split(" ").filter(Boolean);
+
+    if (
+      countSignificantTokens(candidateTokens) <
+      EXACT_POSITION_MIN_SIGNIFICANT_TOKENS
+    ) {
+      continue;
+    }
+
     const position = findNormalizedLyricTextPosition(
       searchContext.normalizedLyrics,
       normalizedCandidate
     );
 
-    if (position !== -1) {
-      return position;
+    if (
+      position !== -1 &&
+      (!bestExactMatch || normalizedCandidate.length > bestExactMatch.candidateLength)
+    ) {
+      bestExactMatch = {
+        position,
+        candidateLength: normalizedCandidate.length,
+      };
     }
   }
 
-  for (const normalizedCandidate of normalizedCandidates) {
+  if (bestExactMatch) {
+    return bestExactMatch.position;
+  }
+
+  for (const normalizedCandidate of getFuzzyNormalizedCandidates(
+    normalizedCandidates
+  )) {
     const position = findFuzzyFragmentPosition(normalizedCandidate, searchContext);
 
     if (position !== null) {
@@ -557,6 +560,16 @@ function findFragmentPositionInContext(
   }
 
   return null;
+}
+
+function getFuzzyNormalizedCandidates(normalizedCandidates: string[]) {
+  return normalizedCandidates
+    .filter(
+      (candidate) =>
+        candidate.split(" ").filter(Boolean).length >= FUZZY_POSITION_MIN_TOKENS
+    )
+    .toSorted((first, second) => second.length - first.length)
+    .slice(0, FUZZY_POSITION_MAX_CANDIDATES);
 }
 
 function findNormalizedLyricTextPosition(lyrics: string, fragment: string) {
@@ -853,7 +866,10 @@ function normalizeLyricsForPosition(value: string) {
     .trim();
 }
 
-async function geniusRequest<T>(path: string): Promise<T> {
+async function geniusRequest<T>(
+  path: string,
+  timeoutMs = 8_000
+): Promise<T> {
   const token = process.env.GENIUS_ACCESS_TOKEN;
 
   if (!token) {
@@ -875,7 +891,7 @@ async function geniusRequest<T>(path: string): Promise<T> {
         Accept: "application/json",
       },
     },
-    8_000
+    timeoutMs
   );
 
   if (!response.ok) {
