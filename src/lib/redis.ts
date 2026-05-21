@@ -1,6 +1,7 @@
 import "server-only";
 
 import { LyricalContextError } from "@/lib/errors";
+import { fetchWithTimeout, readJsonResponse } from "@/lib/http";
 
 export type RedisConfig = {
   url: string;
@@ -29,7 +30,7 @@ export function getRedisConfig(): RedisConfig | null {
 }
 
 export async function runRedisPipeline(redis: RedisConfig, commands: string[][]) {
-  const response = await fetch(`${redis.url}/pipeline`, {
+  const response = await fetchWithTimeout(`${redis.url}/pipeline`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${redis.token}`,
@@ -37,7 +38,7 @@ export async function runRedisPipeline(redis: RedisConfig, commands: string[][])
     },
     body: JSON.stringify(commands),
     cache: "no-store",
-  });
+  }, 5_000);
 
   if (!response.ok) {
     throw new LyricalContextError(
@@ -47,9 +48,10 @@ export async function runRedisPipeline(redis: RedisConfig, commands: string[][])
     );
   }
 
-  const payload = (await response.json()) as
+  const payload = await readJsonResponse<
     | RedisPipelineObjectResponse
-    | RedisPipelineItemResponse[];
+    | RedisPipelineItemResponse[]
+  >(response, 256 * 1024);
 
   if (Array.isArray(payload)) {
     return payload.map((item) => item.result);

@@ -1,12 +1,19 @@
 export class LyricalContextError extends Error {
   readonly code: string;
   readonly status: number;
+  readonly headers?: HeadersInit;
 
-  constructor(code: string, message: string, status = 500) {
+  constructor(
+    code: string,
+    message: string,
+    status = 500,
+    headers?: HeadersInit
+  ) {
     super(message);
     this.name = "LyricalContextError";
     this.code = code;
     this.status = status;
+    this.headers = headers;
   }
 }
 
@@ -20,6 +27,7 @@ export function toPublicError(error: unknown) {
           message: error.message,
         },
       },
+      headers: error.headers,
     };
   }
 
@@ -37,5 +45,6 @@ export function toPublicError(error: unknown) {
           developmentMessage ?? "Something went wrong while loading references.",
       },
     },
+    headers: undefined,
   };
 }

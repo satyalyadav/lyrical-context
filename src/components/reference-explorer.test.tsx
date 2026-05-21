@@ -146,6 +146,37 @@ describe("ReferenceExplorer", () => {
     expect(screen.getByText("Feat. Drake")).toBeVisible();
   });
 
+  it("falls back to the artwork placeholder for unsupported image hosts", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        results: [
+          {
+            type: "song",
+            id: "123",
+            title: "Unknown Host",
+            artist: "Test Artist",
+            artworkUrl: "https://cdn.example.test/art.jpg",
+            sourceUrl: "https://genius.com/song",
+            metadata: { geniusId: 123 },
+          },
+        ],
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReferenceExplorer />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText("e.g. God's Plan"),
+      "unknown host"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(
+      await screen.findByLabelText("Unknown Host artwork placeholder")
+    ).toBeVisible();
+  });
+
   it("surfaces setup errors from the API", async () => {
     vi.stubGlobal(
       "fetch",
@@ -712,7 +743,7 @@ describe("ReferenceExplorer", () => {
     expect(await screen.findByText("An unverified line")).toBeVisible();
   });
 
-  it("renders safe annotation images without passing children to void tags", async () => {
+  it("strips annotation images from rendered HTML", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -775,10 +806,7 @@ describe("ReferenceExplorer", () => {
     );
 
     expect(await screen.findByText("Annotation with image.")).toBeVisible();
-    expect(screen.getByAltText("Studio photo")).toHaveAttribute(
-      "src",
-      "https://images.genius.com/test.jpg"
-    );
+    expect(screen.queryByAltText("Studio photo")).not.toBeInTheDocument();
   });
 
   it("keeps album track references collapsed until a track is opened", async () => {

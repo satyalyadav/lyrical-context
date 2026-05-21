@@ -1,6 +1,7 @@
 import "server-only";
 
 import { withJsonCache } from "@/lib/cache";
+import { fetchWithTimeout, readJsonResponse } from "@/lib/http";
 import type { AlbumSearchResult, AlbumTrack } from "@/lib/types";
 
 const ITUNES_API_BASE = "https://itunes.apple.com";
@@ -111,16 +112,16 @@ function upscaleArtwork(url: string | undefined) {
 }
 
 async function itunesRequest<T>(path: string): Promise<T> {
-  const response = await fetch(`${ITUNES_API_BASE}${path}`, {
+  const response = await fetchWithTimeout(`${ITUNES_API_BASE}${path}`, {
     cache: "no-store",
     headers: {
       Accept: "application/json",
     },
-  });
+  }, 8_000);
 
   if (!response.ok) {
     throw new Error(`iTunes request failed with ${response.status}`);
   }
 
-  return (await response.json()) as T;
+  return readJsonResponse<T>(response, 1024 * 1024);
 }

@@ -27,6 +27,7 @@ const TRACK_REFERENCE_CONCURRENCY = 6;
 const TRACK_SEARCH_RESULT_LIMIT = 8;
 const HIGH_CONFIDENCE_TRACK_MATCH = 0.9;
 const ALBUM_LYRIC_LOOKUP_TIMEOUT_MS = 2500;
+export const MAX_ALBUM_TRACKS = 80;
 
 type TrackMatchResolution = {
   track: AlbumTrack;
@@ -108,6 +109,14 @@ export async function getAlbumReferenceResponse(
       "album_not_found",
       "That album could not be found in iTunes.",
       404
+    );
+  }
+
+  if (albumPayload.tracks.length > MAX_ALBUM_TRACKS) {
+    throw new LyricalContextError(
+      "album_too_large",
+      `Albums with more than ${MAX_ALBUM_TRACKS} tracks are too expensive to load.`,
+      413
     );
   }
 

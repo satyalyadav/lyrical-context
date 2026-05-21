@@ -9,7 +9,10 @@ import {
   searchGeniusSongs,
 } from "@/lib/genius";
 import { getITunesAlbumTracks } from "@/lib/itunes";
-import { getAlbumReferenceResponse } from "@/lib/references-service";
+import {
+  getAlbumReferenceResponse,
+  MAX_ALBUM_TRACKS,
+} from "@/lib/references-service";
 import type {
   AlbumSearchResult,
   AlbumTrack,
@@ -95,6 +98,26 @@ describe("references service", () => {
       expect.stringContaining("track-2"),
       expect.anything()
     );
+  });
+
+  it("rejects albums above the maximum track cap", async () => {
+    vi.mocked(getITunesAlbumTracks).mockResolvedValueOnce({
+      value: {
+        album: albumResult(),
+        tracks: Array.from({ length: MAX_ALBUM_TRACKS + 1 }, (_, index) =>
+          albumTrack(`track-${index}`, `Track ${index}`, index + 1)
+        ),
+      },
+      source: "live",
+    });
+
+    await expect(getAlbumReferenceResponse("album-1")).rejects.toThrowError(
+      expect.objectContaining({
+        code: "album_too_large",
+        status: 413,
+      })
+    );
+    expect(searchGeniusSongs).not.toHaveBeenCalled();
   });
 
   it("overlaps reference loading with remaining track matching while preserving order", async () => {

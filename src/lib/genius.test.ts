@@ -109,7 +109,7 @@ describe("Genius normalizers", () => {
     });
   });
 
-  it("preserves safe annotation images and strips scripts", () => {
+  it("strips annotation images and scripts", () => {
     const references = normalizeReferent(
       {
         id: 100,
@@ -134,10 +134,8 @@ describe("Genius normalizers", () => {
     );
 
     expect(references[0].sortIndex).toBe(0);
-    expect(references[0].annotationHtml).toContain(
-      'src="https://images.genius.com/drake.jpg"'
-    );
-    expect(references[0].annotationHtml).toContain('loading="lazy"');
+    expect(references[0].annotationHtml).not.toContain("<img");
+    expect(references[0].annotationHtml).not.toContain("images.genius.com");
     expect(references[0].annotationHtml).not.toContain("<script");
   });
 

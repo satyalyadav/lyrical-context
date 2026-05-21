@@ -2,6 +2,7 @@ import "server-only";
 
 import { LyricalContextError } from "@/lib/errors";
 import { withJsonCache } from "@/lib/cache";
+import { fetchWithTimeout, readJsonResponse } from "@/lib/http";
 import { consumeGeniusBudget } from "@/lib/usage-budget";
 import {
   detectReferenceCategories,
@@ -476,28 +477,22 @@ async function fetchLyricsOvhLyrics(
 }
 
 async function fetchJsonSafely<T>(url: URL, timeoutMs: number) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       cache: "no-store",
-      signal: controller.signal,
       headers: {
         Accept: "application/json",
         "User-Agent": "lyrical-context/0.1",
       },
-    });
+    }, timeoutMs);
 
     if (!response.ok) {
       return null;
     }
 
-    return (await response.json()) as T;
+    return await readJsonResponse<T>(response, 512 * 1024);
   } catch {
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -871,16 +866,23 @@ async function geniusRequest<T>(path: string): Promise<T> {
 
   await consumeGeniusBudget();
 
-  const response = await fetch(`${GENIUS_API_BASE}${path}`, {
-    cache: "no-store",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
+  const response = await fetchWithTimeout(
+    `${GENIUS_API_BASE}${path}`,
+    {
+      cache: "no-store",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
     },
-  });
+    8_000
+  );
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as
+    const body = (await readJsonResponse<
+      | { meta?: { message?: string } }
+      | null
+    >(response, 64 * 1024).catch(() => null)) as
       | { meta?: { message?: string } }
       | null;
     const message = body?.meta?.message ?? "Genius API request failed.";
@@ -892,5 +894,5 @@ async function geniusRequest<T>(path: string): Promise<T> {
     );
   }
 
-  return (await response.json()) as T;
+  return readJsonResponse<T>(response, 1024 * 1024);
 }

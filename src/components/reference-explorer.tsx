@@ -31,6 +31,7 @@ import type { ChangeEvent, FormEvent, ReactNode } from "react";
 
 import { ReportIssueDialog } from "@/components/report-issue-dialog";
 import { getApiRequestHeaders } from "@/lib/api-client";
+import { isAllowedRemoteImageUrl } from "@/lib/image-hosts";
 import type {
   AlbumReferenceResponse,
   ApiErrorBody,
@@ -67,8 +68,6 @@ type DetailState =
   | { type: "error"; result: SearchResult; message: string };
 
 type UsageBudgetStatus = {
-  limit: number;
-  remaining: number;
   resetAt: string;
   state: "ok" | "warning" | "blocked";
 };
@@ -236,7 +235,7 @@ const ALBUM_LOADING_SKELETONS = [
 ];
 
 const ANNOTATION_BODY_CLASS =
-  "mt-4 [font-family:var(--font-literata)] text-[15px] leading-7 text-[#474741] [&_a]:text-[#181916] [&_a]:underline [&_a]:decoration-[#7d562d]/70 [&_a]:underline-offset-4 [&_a:hover]:text-[#7d562d] [&_blockquote]:my-4 [&_blockquote]:border-l [&_blockquote]:border-[#c8c7bf] [&_blockquote]:pl-4 [&_blockquote]:text-[#181916] [&_figcaption]:mt-2 [&_figcaption]:text-center [&_figcaption]:text-xs [&_figcaption]:text-[#777770] [&_figure]:my-4 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_img]:mx-auto [&_img]:my-4 [&_img]:max-h-[420px] [&_img]:max-w-full [&_img]:rounded [&_img]:border [&_img]:border-[#c8c7bf]/70 [&_img]:object-contain [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_table]:my-4 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-[#c8c7bf] [&_td]:p-2 [&_th]:border [&_th]:border-[#c8c7bf] [&_th]:p-2 [&_ul]:list-disc";
+  "mt-4 [font-family:var(--font-literata)] text-[15px] leading-7 text-[#474741] [&_a]:text-[#181916] [&_a]:underline [&_a]:decoration-[#7d562d]/70 [&_a]:underline-offset-4 [&_a:hover]:text-[#7d562d] [&_blockquote]:my-4 [&_blockquote]:border-l [&_blockquote]:border-[#c8c7bf] [&_blockquote]:pl-4 [&_blockquote]:text-[#181916] [&_figcaption]:mt-2 [&_figcaption]:text-center [&_figcaption]:text-xs [&_figcaption]:text-[#777770] [&_figure]:my-4 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_table]:my-4 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-[#c8c7bf] [&_td]:p-2 [&_th]:border [&_th]:border-[#c8c7bf] [&_th]:p-2 [&_ul]:list-disc";
 
 const SAFE_ANNOTATION_TAGS = new Set([
   "a",
@@ -276,7 +275,7 @@ const SAFE_ANNOTATION_TAGS = new Set([
   "ul",
 ]);
 
-const SAFE_VOID_ANNOTATION_TAGS = new Set(["br", "hr", "img"]);
+const SAFE_VOID_ANNOTATION_TAGS = new Set(["br", "hr"]);
 
 type SafeAnnotationNode =
   | { type: "text"; key: string; text: string }
@@ -1389,27 +1388,6 @@ function safeAnnotationElementProps(
     };
   }
 
-  if (tag === "img") {
-    const src = safeAnnotationUrl(element.getAttribute("src"));
-
-    return {
-      ...(src ? { src } : {}),
-      ...(element.getAttribute("alt")
-        ? { alt: element.getAttribute("alt") ?? "" }
-        : { alt: "" }),
-      ...(element.getAttribute("height")
-        ? { height: element.getAttribute("height") ?? "" }
-        : {}),
-      loading: "lazy",
-      ...(element.getAttribute("title")
-        ? { title: element.getAttribute("title") ?? "" }
-        : {}),
-      ...(element.getAttribute("width")
-        ? { width: element.getAttribute("width") ?? "" }
-        : {}),
-    };
-  }
-
   return {};
 }
 
@@ -1714,7 +1692,7 @@ function BudgetNotice({ budget }: { budget: UsageBudgetStatus | null }) {
           ? `The shared Genius API budget is cooling down. Searches resume around ${formatBudgetReset(
               budget.resetAt
             )}.`
-          : `The shared Genius API budget is low (${budget.remaining} of ${budget.limit} left). It resets around ${formatBudgetReset(
+          : `The shared Genius API budget is low. It resets around ${formatBudgetReset(
               budget.resetAt
             )}.`}
       </span>
@@ -1757,7 +1735,7 @@ function Artwork({
       ? "size-20 rounded object-cover shadow-sm md:size-24"
       : "size-12 rounded object-cover";
 
-  if (url) {
+  if (isAllowedRemoteImageUrl(url)) {
     return (
       <Image
         alt=""
@@ -1869,8 +1847,6 @@ async function parseResponse<T>(response: Response): Promise<T> {
 
 function parseBudgetHeaders(headers: Headers): UsageBudgetStatus | null {
   const state = headers.get("x-lyrical-budget-state");
-  const limit = Number(headers.get("x-lyrical-budget-limit"));
-  const remaining = Number(headers.get("x-lyrical-budget-remaining"));
   const resetAt = headers.get("x-lyrical-budget-reset-at");
 
   if (
@@ -1881,13 +1857,11 @@ function parseBudgetHeaders(headers: Headers): UsageBudgetStatus | null {
     return null;
   }
 
-  if (!Number.isFinite(limit) || !Number.isFinite(remaining) || !resetAt) {
+  if (!resetAt) {
     return null;
   }
 
   return {
-    limit,
-    remaining,
     resetAt,
     state,
   };

@@ -63,8 +63,6 @@ export function getGeniusBudgetHeaders(snapshot = lastSnapshot) {
     return headers;
   }
 
-  headers.set("x-lyrical-budget-limit", String(snapshot.limit));
-  headers.set("x-lyrical-budget-remaining", String(snapshot.remaining));
   headers.set("x-lyrical-budget-reset-at", new Date(snapshot.resetAt).toISOString());
   headers.set("x-lyrical-budget-state", snapshot.state);
 

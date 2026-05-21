@@ -1,6 +1,11 @@
-import { assertApiAccess } from "@/lib/api-guard";
+import {
+  assertApiAccess,
+  getRateLimitHeaders,
+  type ApiAccessContext,
+} from "@/lib/api-guard";
 import { jsonWithBudgetHeaders } from "@/lib/api-response";
 import { toPublicError } from "@/lib/errors";
+import { validateNumericId } from "@/lib/request-validation";
 import { getAlbumReferenceResponse } from "@/lib/references-service";
 
 export const runtime = "nodejs";
@@ -11,17 +16,30 @@ type AlbumReferenceContext = {
 };
 
 export async function GET(request: Request, context: AlbumReferenceContext) {
+  let access: ApiAccessContext | null = null;
+
   try {
-    await assertApiAccess(request);
+    access = await assertApiAccess(request);
 
     const { id } = await context.params;
-    const payload = await getAlbumReferenceResponse(id);
+    const payload = await getAlbumReferenceResponse(validateNumericId(id, "Album ID"));
 
-    return jsonWithBudgetHeaders(payload);
+    return jsonWithBudgetHeaders(payload, {
+      headers: getRateLimitHeaders(access.rateLimit),
+    });
   } catch (error) {
     const publicError = toPublicError(error);
+    const headers = new Headers(publicError.headers);
+
+    if (access) {
+      getRateLimitHeaders(access.rateLimit).forEach((value, key) => {
+        headers.set(key, value);
+      });
+    }
+
     return jsonWithBudgetHeaders(publicError.body, {
       status: publicError.status,
+      headers,
     });
   }
 }

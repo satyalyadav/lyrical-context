@@ -18,6 +18,7 @@ describe("Genius usage budget", () => {
   afterEach(() => {
     resetUsageBudgetForTests();
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -45,8 +46,8 @@ describe("Genius usage budget", () => {
 
     const headers = getGeniusBudgetHeaders(await getGeniusBudgetSnapshot());
 
-    expect(headers.get("x-lyrical-budget-limit")).toBe("2");
-    expect(headers.get("x-lyrical-budget-remaining")).toBe("1");
+    expect(headers.get("x-lyrical-budget-limit")).toBeNull();
+    expect(headers.get("x-lyrical-budget-remaining")).toBeNull();
     expect(headers.get("x-lyrical-budget-state")).toBe("warning");
     expect(headers.get("x-lyrical-budget-reset-at")).toBeTruthy();
   });

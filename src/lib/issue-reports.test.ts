@@ -31,4 +31,5 @@ describe("saveIssueReport", () => {
     expect(record.note).toBe("HYFR did not match");
     expect(getLocalIssueReportsForTests()[0]?.kind).toBe("missing_match");
   });
+
 });

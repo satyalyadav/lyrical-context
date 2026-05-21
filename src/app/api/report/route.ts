@@ -1,4 +1,8 @@
-import { assertApiAccess } from "@/lib/api-guard";
+import {
+  assertApiAccess,
+  getRateLimitHeaders,
+  type ApiAccessContext,
+} from "@/lib/api-guard";
 import { toPublicError, LyricalContextError } from "@/lib/errors";
 import {
   type IssueReportContext,
@@ -6,6 +10,7 @@ import {
   saveIssueReport,
 } from "@/lib/issue-reports";
 import { notifyIssueReportByEmail } from "@/lib/report-email";
+import { readJsonBody, validateSameOriginUrl } from "@/lib/request-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,14 +22,16 @@ const REPORT_KINDS = new Set<IssueReportKind>([
 ]);
 
 export async function POST(request: Request) {
-  try {
-    assertApiAccess(request);
+  let access: ApiAccessContext | null = null;
 
-    const payload = (await request.json()) as {
+  try {
+    access = await assertApiAccess(request);
+
+    const payload = await readJsonBody<{
       kind?: unknown;
       note?: unknown;
       context?: unknown;
-    };
+    }>(request);
 
     const kind = payload.kind;
 
@@ -51,7 +58,7 @@ export async function POST(request: Request) {
     const record = await saveIssueReport({
       kind: reportKind,
       note: note || null,
-      context: normalizeContext(payload.context),
+      context: normalizeContext(payload.context, request),
     });
 
     const emailResult = await notifyIssueReportByEmail(record).catch((error) => {
@@ -63,14 +70,25 @@ export async function POST(request: Request) {
       ok: true,
       id: record.id,
       emailSent: emailResult.sent,
-    });
+    }, { headers: getRateLimitHeaders(access.rateLimit) });
   } catch (error) {
     const publicError = toPublicError(error);
-    return Response.json(publicError.body, { status: publicError.status });
+    const headers = new Headers(publicError.headers);
+
+    if (access) {
+      getRateLimitHeaders(access.rateLimit).forEach((value, key) => {
+        headers.set(key, value);
+      });
+    }
+
+    return Response.json(publicError.body, {
+      status: publicError.status,
+      headers,
+    });
   }
 }
 
-function normalizeContext(value: unknown): IssueReportContext {
+function normalizeContext(value: unknown, request: Request): IssueReportContext {
   if (!value || typeof value !== "object") {
     return {};
   }
@@ -105,7 +123,10 @@ function normalizeContext(value: unknown): IssueReportContext {
       typeof context.errorMessage === "string"
         ? context.errorMessage.trim().slice(0, 500)
         : null,
-    pageUrl:
-      typeof context.pageUrl === "string" ? context.pageUrl.trim().slice(0, 500) : null,
+    pageUrl: validateSameOriginUrl(
+      typeof context.pageUrl === "string" ? context.pageUrl : null,
+      request,
+      "Page URL"
+    ),
   };
 }

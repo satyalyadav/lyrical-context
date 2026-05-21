@@ -1,6 +1,5 @@
 import "server-only";
 
-import { LyricalContextError } from "@/lib/errors";
 import { getRedisConfig, redisString, runRedisPipeline } from "@/lib/redis";
 
 export type IssueReportKind = "load_failed" | "missing_match" | "other";
@@ -54,21 +53,13 @@ export async function saveIssueReport(input: IssueReportInput) {
     return record;
   }
 
-  if (process.env.NODE_ENV === "development" || process.env.VERCEL !== "1") {
-    localReports.unshift(record);
+  localReports.unshift(record);
 
-    if (localReports.length > MAX_STORED_REPORTS) {
-      localReports.length = MAX_STORED_REPORTS;
-    }
-
-    return record;
+  if (localReports.length > MAX_STORED_REPORTS) {
+    localReports.length = MAX_STORED_REPORTS;
   }
 
-  throw new LyricalContextError(
-    "storage_unavailable",
-    "Issue reports are not available right now. Try GitHub instead.",
-    503
-  );
+  return record;
 }
 
 export function resetIssueReportsForTests() {

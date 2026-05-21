@@ -1,5 +1,6 @@
 import "server-only";
 
+import { fetchWithTimeout, readResponseText } from "@/lib/http";
 import type { IssueReportRecord } from "@/lib/issue-reports";
 
 export async function notifyIssueReportByEmail(report: IssueReportRecord) {
@@ -12,23 +13,27 @@ export async function notifyIssueReportByEmail(report: IssueReportRecord) {
     return { sent: false as const, reason: "not_configured" as const };
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const response = await fetchWithTimeout(
+    "https://api.resend.com/emails",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [notifyEmail],
+        subject: `[Lyrical Context] ${formatKind(report.kind)}`,
+        text: formatReportEmailBody(report),
+      }),
+      cache: "no-store",
     },
-    body: JSON.stringify({
-      from: fromEmail,
-      to: [notifyEmail],
-      subject: `[Lyrical Context] ${formatKind(report.kind)}`,
-      text: formatReportEmailBody(report),
-    }),
-    cache: "no-store",
-  });
+    5_000
+  );
 
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
+    const body = await readResponseText(response, 16 * 1024).catch(() => "");
     console.error("Issue report email failed:", response.status, body);
     return { sent: false as const, reason: "send_failed" as const };
   }

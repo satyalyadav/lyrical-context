@@ -1,7 +1,8 @@
 export const API_SESSION_COOKIE = "lc_api_session";
 
-const API_SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
+const API_SESSION_MAX_AGE_SECONDS = 60 * 60 * 2;
 const HMAC_ALGORITHM = { name: "HMAC", hash: "SHA-256" };
+const MIN_SESSION_SECRET_LENGTH = 32;
 const TOKEN_PARTS = 3;
 
 export function getApiSessionMaxAgeSeconds() {
@@ -55,12 +56,40 @@ export async function verifyApiSessionToken(
   return verifyApiSessionSignature(`${issuedAtText}.${nonce}`, signature, secret);
 }
 
+export function getApiSessionConfigError() {
+  const secret = process.env.LYRICAL_CONTEXT_SESSION_SECRET?.trim() ?? "";
+
+  if (!requiresStrongSessionSecret()) {
+    return null;
+  }
+
+  if (!secret) {
+    return "Set LYRICAL_CONTEXT_SESSION_SECRET before requiring API sessions.";
+  }
+
+  if (secret.length < MIN_SESSION_SECRET_LENGTH) {
+    return `LYRICAL_CONTEXT_SESSION_SECRET must be at least ${MIN_SESSION_SECRET_LENGTH} characters.`;
+  }
+
+  return null;
+}
+
 function getApiSessionSecret() {
-  return (
-    process.env.LYRICAL_CONTEXT_SESSION_SECRET?.trim() ||
-    process.env.GENIUS_ACCESS_TOKEN?.trim() ||
-    ""
-  );
+  const secret = process.env.LYRICAL_CONTEXT_SESSION_SECRET?.trim() ?? "";
+
+  if (!secret) {
+    return "";
+  }
+
+  if (requiresStrongSessionSecret() && secret.length < MIN_SESSION_SECRET_LENGTH) {
+    return "";
+  }
+
+  return secret;
+}
+
+function requiresStrongSessionSecret() {
+  return process.env.LYRICAL_CONTEXT_REQUIRE_API_SESSION === "true";
 }
 
 async function signApiSessionPayload(payload: string, secret: string) {

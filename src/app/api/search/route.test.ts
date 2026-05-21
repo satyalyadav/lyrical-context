@@ -11,6 +11,7 @@ vi.mock("@/lib/references-service", () => ({
 describe("GET /api/search", () => {
   beforeEach(() => {
     resetApiGuardForTests();
+    vi.clearAllMocks();
     delete process.env.LYRICAL_CONTEXT_API_KEY;
   });
 
@@ -47,6 +48,18 @@ describe("GET /api/search", () => {
     expect(response.status).toBe(200);
     expect(body.results[0].title).toBe("God's Plan");
     expect(search).toHaveBeenCalledWith("song", "drake");
+    expect(response.headers.get("RateLimit-Limit")).toBe("60");
+  });
+
+  it("rejects overly long search queries", async () => {
+    const response = await GET(
+      new Request(`http://app.test/api/search?type=song&q=${"a".repeat(101)}`)
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error.code).toBe("query_too_long");
+    expect(search).not.toHaveBeenCalled();
   });
 
   it("rejects incorrect bearer tokens when an API key is configured", async () => {

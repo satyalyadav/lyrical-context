@@ -4,6 +4,7 @@ import {
   detectReferenceCategories,
   normalizeTitle,
   normalizeTitleForSearch,
+  sanitizeAnnotationHtml,
   stripHtml,
   truncateText,
 } from "@/lib/text";
@@ -50,6 +51,16 @@ describe("text utilities", () => {
     expect(stripHtml("<p>Line one<br>Line two &amp; three</p>")).toBe(
       "Line one Line two & three"
     );
+  });
+
+  it("removes annotation images while preserving safe links", () => {
+    const sanitized = sanitizeAnnotationHtml(
+      '<p>Note <img src="https://tracker.test/pixel.png"><a href="javascript:alert(1)">bad</a><a href="https://genius.com">good</a></p>'
+    );
+
+    expect(sanitized).not.toContain("<img");
+    expect(sanitized).not.toContain("javascript:");
+    expect(sanitized).toContain('href="https://genius.com"');
   });
 
   it("truncates long text without changing short text", () => {

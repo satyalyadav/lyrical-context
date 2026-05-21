@@ -65,7 +65,6 @@ const ANNOTATION_ALLOWED_TAGS = [
   "h4",
   "hr",
   "i",
-  "img",
   "li",
   "ol",
   "p",
@@ -109,19 +108,12 @@ export function sanitizeAnnotationHtml(value: string) {
     allowedTags: ANNOTATION_ALLOWED_TAGS,
     allowedAttributes: {
       a: ["href", "title", "target", "rel"],
-      img: ["alt", "height", "loading", "src", "title", "width"],
     },
     allowedSchemes: ["http", "https", "mailto"],
-    allowedSchemesByTag: {
-      img: ["http", "https"],
-    },
     transformTags: {
       a: sanitizeHtml.simpleTransform("a", {
         rel: "noopener noreferrer",
         target: "_blank",
-      }),
-      img: sanitizeHtml.simpleTransform("img", {
-        loading: "lazy",
       }),
     },
   }).trim();

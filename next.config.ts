@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 import { networkInterfaces } from "node:os";
 
+import { ALLOWED_REMOTE_IMAGE_HOSTS } from "./src/lib/image-hosts";
+
 const loopbackOrigins = ["localhost", "127.0.0.1"];
 const localNetworkOrigins = Object.values(networkInterfaces())
   .flat()
@@ -15,32 +17,10 @@ const localNetworkOrigins = Object.values(networkInterfaces())
 const nextConfig: NextConfig = {
   allowedDevOrigins: [...loopbackOrigins, ...localNetworkOrigins],
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "images.genius.com",
-      },
-      {
-        protocol: "https",
-        hostname: "is1-ssl.mzstatic.com",
-      },
-      {
-        protocol: "https",
-        hostname: "is2-ssl.mzstatic.com",
-      },
-      {
-        protocol: "https",
-        hostname: "is3-ssl.mzstatic.com",
-      },
-      {
-        protocol: "https",
-        hostname: "is4-ssl.mzstatic.com",
-      },
-      {
-        protocol: "https",
-        hostname: "is5-ssl.mzstatic.com",
-      },
-    ],
+    remotePatterns: ALLOWED_REMOTE_IMAGE_HOSTS.map((hostname) => ({
+      protocol: "https",
+      hostname,
+    })),
   },
   serverExternalPackages: ["better-sqlite3"],
 };
