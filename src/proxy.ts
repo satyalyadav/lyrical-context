@@ -10,7 +10,9 @@ import {
 
 export async function proxy(request: NextRequest) {
   const nonce = createNonce();
+  const csp = createContentSecurityPolicy(nonce, request);
   const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("content-security-policy", csp);
   requestHeaders.set("x-nonce", nonce);
 
   let response = NextResponse.next({
@@ -45,7 +47,7 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  applySecurityHeaders(response.headers, nonce, request);
+  applySecurityHeaders(response.headers, csp, request);
   return response;
 }
 
@@ -75,10 +77,10 @@ export function createContentSecurityPolicy(nonce: string, request: NextRequest)
 
 function applySecurityHeaders(
   headers: Headers,
-  nonce: string,
+  csp: string,
   request: NextRequest
 ) {
-  headers.set("Content-Security-Policy", createContentSecurityPolicy(nonce, request));
+  headers.set("Content-Security-Policy", csp);
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "no-referrer");
   headers.set("X-Frame-Options", "DENY");

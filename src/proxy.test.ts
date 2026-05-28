@@ -23,6 +23,19 @@ describe("proxy security headers", () => {
     expect(csp).toContain("script-src 'self' 'nonce-nonce-value'");
   });
 
+  it("forwards the same CSP into the Next render request", async () => {
+    const response = await proxy(new NextRequest("https://app.test/"));
+    const csp = response.headers.get("Content-Security-Policy");
+
+    expect(csp).toContain("script-src 'self' 'nonce-");
+    expect(response.headers.get("x-middleware-override-headers")).toContain(
+      "content-security-policy"
+    );
+    expect(response.headers.get("x-middleware-request-content-security-policy")).toBe(
+      csp
+    );
+  });
+
   it("sets a strict secure session cookie on page navigation", async () => {
     vi.stubEnv("LYRICAL_CONTEXT_REQUIRE_API_SESSION", "true");
     process.env.LYRICAL_CONTEXT_SESSION_SECRET = SESSION_SECRET;

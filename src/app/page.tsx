@@ -6,6 +6,8 @@ export const metadata: Metadata = {
   description: "Search Genius references and album annotations.",
 };
 
+export const dynamic = "force-dynamic";
+
 export default function Home() {
   return <ReferenceExplorer />;
 }
