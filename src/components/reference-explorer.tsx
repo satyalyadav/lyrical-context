@@ -990,7 +990,6 @@ function AlbumTrackList({
     );
   }
 
-  const isSearchingLyrics = hasLyricSearch(lyricQuery);
   const trackRows = data.tracks
     .map((group) => {
       const categoryReferences = filterReferences(group.references, filter);
@@ -998,16 +997,24 @@ function AlbumTrackList({
 
       return { group, references };
     })
-    .filter(({ references }) => !isSearchingLyrics || references.length > 0);
+    .filter(({ references }) => references.length > 0);
 
-  if (isSearchingLyrics && trackRows.length === 0) {
+  if (trackRows.length === 0) {
+    const isSearchingLyrics = hasLyricSearch(lyricQuery);
+
     return (
       <EmptyPanel
-        title="No lyric matches"
-        body="No lyric fragments match this search and filter."
+        title={isSearchingLyrics ? "No lyric matches" : "No matching tracks"}
+        body={
+          isSearchingLyrics
+            ? "No lyric fragments match this search and filter."
+            : "No tracks have references in this category."
+        }
       />
     );
   }
+
+  const isSearchingLyrics = hasLyricSearch(lyricQuery);
 
   return (
     <div className="space-y-0">

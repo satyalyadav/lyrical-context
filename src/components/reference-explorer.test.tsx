@@ -640,7 +640,7 @@ describe("ReferenceExplorer", () => {
     expect(screen.getByPlaceholderText("e.g. Scorpion")).toBeVisible();
   });
 
-  it("keeps matched album tracks visible when a filter has no references", async () => {
+  it("hides album tracks when the selected category has no references", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -728,17 +728,21 @@ describe("ReferenceExplorer", () => {
       screen.getByRole("button", { name: /WE STILL DON'T TRUST YOU/i })
     );
 
+    expect(await screen.findByText("No matching tracks")).toBeVisible();
+    expect(screen.queryByRole("button", {
+      name: /Filtered Out Track/i,
+    })).not.toBeInTheDocument();
+    expect(screen.queryByText("0 refs")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Unverified/i }));
+
     const trackButton = await screen.findByRole("button", {
       name: /Filtered Out Track/i,
     });
     expect(trackButton).toBeVisible();
-    expect(screen.getByText("0 refs")).toBeVisible();
+    expect(screen.getByText("1 refs")).toBeVisible();
 
     await userEvent.click(trackButton);
-
-    expect(await screen.findByText("No references match this filter.")).toBeVisible();
-
-    await userEvent.click(screen.getByRole("button", { name: /Unverified/i }));
 
     expect(await screen.findByText("An unverified line")).toBeVisible();
   });
@@ -943,8 +947,10 @@ describe("ReferenceExplorer", () => {
     await screen.findByRole("button", { name: /First Track/i });
     expect(screen.getAllByText("2018").length).toBeGreaterThan(0);
     expect(screen.getByText("3 tracks")).toBeVisible();
-    expect(screen.getByRole("button", { name: /Missing Track/i })).toBeVisible();
-    expect(screen.getByText("missing")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /Missing Track/i })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("missing")).not.toBeInTheDocument();
     expect(screen.queryByText("A hidden line")).not.toBeInTheDocument();
     expect(screen.queryByText("Another hidden line")).not.toBeInTheDocument();
 

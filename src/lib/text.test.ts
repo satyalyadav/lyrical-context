@@ -79,4 +79,29 @@ describe("text utilities", () => {
       })
     ).toEqual(["diss", "names-places", "verified-accepted"]);
   });
+
+  it("does not classify ordinary lyric uses of beat as samples", () => {
+    expect(
+      detectReferenceCategories({
+        fragment: "So beat it, but you wanna be bad",
+        annotation:
+          "The protagonist warns his friend about a gang who is trying to kick him out of town.",
+        verified: false,
+        state: "accepted",
+        classification: null,
+      })
+    ).toEqual(["names-places", "verified-accepted"]);
+  });
+
+  it("detects sample categories from annotation sample language", () => {
+    expect(
+      detectReferenceCategories({
+        fragment: "A lyric with no trigger words",
+        annotation: "This song sampled an older funk record.",
+        verified: false,
+        state: null,
+        classification: null,
+      })
+    ).toEqual(["sample-interpolation", "names-places"]);
+  });
 });

@@ -44,7 +44,6 @@ const SAMPLE_TERMS = [
   "interpolated",
   "remix",
   "flip",
-  "beat",
 ];
 
 const ANNOTATION_ALLOWED_TAGS = [
@@ -168,13 +167,14 @@ export function detectReferenceCategories(input: {
   classification: string | null;
 }): ReferenceCategory[] {
   const text = `${input.fragment} ${input.annotation}`.toLocaleLowerCase();
+  const annotationText = input.annotation.toLocaleLowerCase();
   const categories = new Set<ReferenceCategory>();
 
   if (DISS_TERMS.some((term) => text.includes(term))) {
     categories.add("diss");
   }
 
-  if (SAMPLE_TERMS.some((term) => text.includes(term))) {
+  if (SAMPLE_TERMS.some((term) => annotationText.includes(term))) {
     categories.add("sample-interpolation");
   }
 
