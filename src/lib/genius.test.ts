@@ -26,6 +26,7 @@ describe("Genius normalizers", () => {
   afterEach(() => {
     resetCacheForTests();
     delete process.env.LYRICAL_CONTEXT_DB_PATH;
+    vi.unstubAllGlobals();
 
     if (originalGeniusAccessToken) {
       process.env.GENIUS_ACCESS_TOKEN = originalGeniusAccessToken;
@@ -363,6 +364,152 @@ Something's wrong, I can feel it`,
       "Second annotated lyric line here",
     ]);
     expect(references[1].sortIndex).toBeLessThan(1_000_000_000);
+  });
+
+  it("orders by lyric position when api referent order differs from song order", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url.startsWith("https://api.genius.com/referents")) {
+          return jsonResponse({
+            response: {
+              referents: [
+                {
+                  id: 10,
+                  fragment: "Later verse line from the middle of the song",
+                  classification: "unreviewed",
+                  annotations: [{ id: 1, body: { plain: "Unreviewed." } }],
+                },
+                {
+                  id: 11,
+                  fragment: "Much later line near the end of the track",
+                  classification: "accepted",
+                  annotations: [{ id: 2, body: { plain: "Later." } }],
+                },
+                {
+                  id: 12,
+                  fragment: "Opening theme line appears first in the song",
+                  classification: "accepted",
+                  annotations: [{ id: 3, body: { plain: "Opening." } }],
+                },
+              ],
+            },
+          });
+        }
+
+        if (url.startsWith("https://lrclib.net/api/get")) {
+          return jsonResponse({
+            plainLyrics: `Opening theme line appears first in the song
+Some bridge content here in the middle
+Later verse line from the middle of the song
+Much later line near the end of the track`,
+          });
+        }
+
+        if (url.startsWith("https://api.lyrics.ovh/v1")) {
+          return new Response(JSON.stringify({ error: "No lyrics found" }), {
+            status: 404,
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    const { value: references } = await getGeniusSongReferences("999", {
+      title: "Example Track",
+      artist: "Example Artist",
+    });
+
+    expect(references.map((reference) => reference.fragment)).toEqual([
+      "Opening theme line appears first in the song",
+      "Later verse line from the middle of the song",
+      "Much later line near the end of the track",
+    ]);
+  });
+
+  it("orders chronologically when title and artist are omitted from the request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url.startsWith("https://api.genius.com/songs/999")) {
+          return jsonResponse({
+            response: {
+              song: {
+                id: 999,
+                title: "Example Track",
+                url: "https://genius.com/example-track-lyrics",
+                primary_artist: { name: "Example Artist" },
+              },
+            },
+          });
+        }
+
+        if (url.startsWith("https://api.genius.com/referents")) {
+          return jsonResponse({
+            response: {
+              referents: [
+                {
+                  id: 10,
+                  fragment: "Earlier api slot but unreviewed",
+                  classification: "unreviewed",
+                  annotations: [{ id: 1, body: { plain: "A" } }],
+                },
+                {
+                  id: 11,
+                  fragment: "Second line in api order but later in lyrics",
+                  classification: "accepted",
+                  annotations: [{ id: 2, body: { plain: "B" } }],
+                },
+                {
+                  id: 12,
+                  fragment: "First line in the actual song lyrics",
+                  classification: "accepted",
+                  annotations: [{ id: 3, body: { plain: "C" } }],
+                },
+              ],
+            },
+          });
+        }
+
+        if (url.startsWith("https://lrclib.net/api/get")) {
+          return jsonResponse({
+            plainLyrics: `First line in the actual song lyrics
+Second line in api order but later in lyrics`,
+          });
+        }
+
+        if (url.startsWith("https://api.lyrics.ovh/v1")) {
+          return new Response(JSON.stringify({ error: "No lyrics found" }), {
+            status: 404,
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      })
+    );
+
+    const { value: references } = await getGeniusSongReferences("999");
+    const acceptedReferences = references
+      .filter(
+        (reference) =>
+          reference.state === "accepted" ||
+          reference.classification === "accepted"
+      )
+      .toSorted((first, second) => first.sortIndex - second.sortIndex);
+
+    expect(acceptedReferences[0].fragment).toBe(
+      "First line in the actual song lyrics"
+    );
+    expect(
+      acceptedReferences.find((reference) =>
+        reference.fragment.includes("later in lyrics")
+      )
+    ).not.toBe(acceptedReferences[0]);
   });
 });
 

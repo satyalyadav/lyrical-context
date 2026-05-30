@@ -18,7 +18,7 @@ const LYRICS_OVH_API_BASE = "https://api.lyrics.ovh/v1";
 const SEARCH_CACHE_VERSION = 2;
 const SEARCH_TTL_SECONDS = 60 * 60 * 24;
 const REFERENCES_TTL_SECONDS = 60 * 30;
-const REFERENCES_CACHE_VERSION = 11;
+const REFERENCES_CACHE_VERSION = 12;
 const MAX_REFERENT_PAGES = 6;
 const REFERENTS_PER_PAGE = 50;
 const GENIUS_REFERENT_TIMEOUT_MS = 15_000;
@@ -150,15 +150,23 @@ export async function getGeniusSongReferences(
   songId: string,
   orderContext?: SongReferenceOrderContext
 ) {
-  const canResolveLyricOrder = Boolean(orderContext?.title && orderContext.artist);
+  const resolvedOrderContext = await resolveSongReferenceOrderContext(
+    songId,
+    orderContext
+  );
+  const canResolveLyricOrder = Boolean(
+    resolvedOrderContext.title && resolvedOrderContext.artist
+  );
   const lyricLookupTimeoutMs =
-    orderContext?.lyricLookupTimeoutMs ?? DEFAULT_LYRIC_LOOKUP_TIMEOUT_MS;
+    resolvedOrderContext.lyricLookupTimeoutMs ?? DEFAULT_LYRIC_LOOKUP_TIMEOUT_MS;
   const key = `genius:references:v${REFERENCES_CACHE_VERSION}:${songId}:${
     canResolveLyricOrder ? `lyric-order:${lyricLookupTimeoutMs}` : "api-order"
   }`;
 
   return withJsonCache(key, REFERENCES_TTL_SECONDS, async () => {
-    const lyricTextsPromise = fetchLyricOrderTexts(orderContext).catch(() => []);
+    const lyricTextsPromise = fetchLyricOrderTexts(resolvedOrderContext).catch(
+      () => []
+    );
     const referents = await fetchGeniusReferents(songId);
 
     const lyricPositions = await resolveReferentLyricPositions(
@@ -389,6 +397,30 @@ async function resolveReferentLyricPositions(
   }
 
   return positions;
+}
+
+async function resolveSongReferenceOrderContext(
+  songId: string,
+  orderContext?: SongReferenceOrderContext
+): Promise<SongReferenceOrderContext> {
+  const title = orderContext?.title?.trim();
+  const artist = orderContext?.artist?.trim();
+
+  if (title && artist) {
+    return {
+      ...orderContext,
+      title,
+      artist,
+    };
+  }
+
+  const { value: songDetails } = await getGeniusSongDetails(songId);
+
+  return {
+    ...orderContext,
+    title: title ?? songDetails.title,
+    artist: artist ?? songDetails.artist,
+  };
 }
 
 async function fetchLyricOrderTexts(orderContext?: SongReferenceOrderContext) {
