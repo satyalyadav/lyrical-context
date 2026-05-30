@@ -4,6 +4,7 @@ import { LyricalContextError } from "@/lib/errors";
 
 const DEFAULT_JSON_BODY_LIMIT_BYTES = 8 * 1024;
 const MAX_ID_LENGTH = 18;
+const MAX_ALBUM_ID_LENGTH = 80;
 const MAX_SEARCH_QUERY_LENGTH = 100;
 const MAX_FALLBACK_TEXT_LENGTH = 200;
 const MAX_FALLBACK_URL_LENGTH = 500;
@@ -43,6 +44,27 @@ export function validateNumericId(value: string, label: string) {
   }
 
   return normalizedValue;
+}
+
+export function validateAlbumId(value: string) {
+  const normalizedValue = value.trim();
+
+  if (/^\d{1,18}$/u.test(normalizedValue)) {
+    return normalizedValue;
+  }
+
+  if (
+    normalizedValue.length <= MAX_ALBUM_ID_LENGTH &&
+    /^spotify:[A-Za-z0-9]{1,64}$/u.test(normalizedValue)
+  ) {
+    return normalizedValue;
+  }
+
+  throw new LyricalContextError(
+    "invalid_id",
+    "Album ID must be an iTunes numeric ID or Spotify album ID.",
+    400
+  );
 }
 
 export function validateOptionalText(value: string | null, label: string) {

@@ -7,8 +7,13 @@ import {
   getGeniusSongReferences,
   searchGeniusSongs,
 } from "@/lib/genius";
-import { getITunesAlbumTracks, searchITunesAlbums } from "@/lib/itunes";
+import { getITunesAlbumTracks } from "@/lib/itunes";
 import { pickBestSongMatch, type SongMatch } from "@/lib/matching";
+import {
+  decodeSpotifyAlbumId,
+  getSpotifyAlbumTracks,
+  searchSpotifyAlbums,
+} from "@/lib/spotify";
 import { normalizeTitle, normalizeTitleForSearch } from "@/lib/text";
 import type {
   AlbumReferenceResponse,
@@ -21,7 +26,7 @@ import type {
 } from "@/lib/types";
 
 const TRACK_MATCH_TTL_SECONDS = 60 * 60 * 24;
-const TRACK_MATCH_CACHE_VERSION = 8;
+const TRACK_MATCH_CACHE_VERSION = 9;
 const TRACK_MATCH_CONCURRENCY = 6;
 const TRACK_REFERENCE_CONCURRENCY = 6;
 const TRACK_SEARCH_RESULT_LIMIT = 8;
@@ -55,7 +60,7 @@ export async function search(type: SearchType, query: string) {
     return value satisfies SearchResult[];
   }
 
-  const { value } = await searchITunesAlbums(normalizedQuery);
+  const { value } = await searchSpotifyAlbums(normalizedQuery);
   return value satisfies SearchResult[];
 }
 
@@ -99,15 +104,17 @@ export async function getSongReferenceResponse(
 export async function getAlbumReferenceResponse(
   collectionId: string
 ): Promise<AlbumReferenceResponse> {
-  const { value: albumPayload, source: albumSource } =
-    await getITunesAlbumTracks(collectionId);
+  const spotifyAlbumId = decodeSpotifyAlbumId(collectionId);
+  const { value: albumPayload, source: albumSource } = spotifyAlbumId
+    ? await getSpotifyAlbumTracks(spotifyAlbumId)
+    : await getITunesAlbumTracks(collectionId);
 
   const album = albumPayload.album;
 
   if (!album) {
     throw new LyricalContextError(
       "album_not_found",
-      "That album could not be found in iTunes.",
+      "That album could not be found.",
       404
     );
   }
@@ -329,6 +336,7 @@ function buildTrackTitleSearchVariants(title: string) {
   const normalizedTitle = normalizeTitle(title);
   const variants = [
     titleForSearch,
+    ...extractSoundtrackTitleVariants(title),
     ...extractLeadingInitialismTitleVariants(title),
   ];
 
@@ -339,6 +347,26 @@ function buildTrackTitleSearchVariants(title: string) {
   variants.push(normalizedTitle);
 
   return uniqueSearchQueries(variants);
+}
+
+function extractSoundtrackTitleVariants(title: string) {
+  const variants: string[] = [];
+  const dashMatch = title.match(
+    /^\s*(.+?)\s+[-–—]\s+(?:theme\s+from|from\s+["“”']?[^"“”']+["“”']?\s+soundtrack|.*\bsoundtrack\b).*/iu
+  );
+  const parentheticalMatch = title.match(
+    /^\s*(.+?)\s*[\[(]\s*(?:theme\s+from|from\s+["“”']?[^"“”']+["“”']?\s+soundtrack|.*\bsoundtrack\b).*[\])]\s*$/iu
+  );
+
+  for (const match of [dashMatch, parentheticalMatch]) {
+    const variant = match?.[1] ? normalizeTitleForSearch(match[1]) : "";
+
+    if (variant) {
+      variants.push(variant);
+    }
+  }
+
+  return variants;
 }
 
 function extractLeadingInitialismTitleVariants(title: string) {

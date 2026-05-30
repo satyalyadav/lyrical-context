@@ -86,6 +86,8 @@ export function normalizeITunesAlbum(album: ITunesAlbum): AlbumSearchResult {
     sourceUrl: album.collectionViewUrl ?? "https://music.apple.com",
     metadata: {
       collectionId: album.collectionId,
+      spotifyId: null,
+      provider: "itunes",
       trackCount: album.trackCount ?? null,
       releaseYear: album.releaseDate ? album.releaseDate.slice(0, 4) : null,
     },

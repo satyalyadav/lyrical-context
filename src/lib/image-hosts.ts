@@ -6,6 +6,7 @@ export const ALLOWED_REMOTE_IMAGE_HOSTS = [
   "is3-ssl.mzstatic.com",
   "is4-ssl.mzstatic.com",
   "is5-ssl.mzstatic.com",
+  "i.scdn.co",
 ] as const;
 
 const allowedRemoteImageHosts = new Set<string>(ALLOWED_REMOTE_IMAGE_HOSTS);

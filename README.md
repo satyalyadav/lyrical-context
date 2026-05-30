@@ -14,13 +14,18 @@ and the expectations in the [Genius API documentation](https://docs.genius.com/)
 
 ## Setup
 
-Copy `.env.example` to `.env.local` and add a [Genius API](https://genius.com/api-clients) client access token:
+Copy `.env.example` to `.env.local` and add:
+
+- a [Genius API](https://genius.com/api-clients) client access token
+- Spotify Web API client credentials from a Spotify Developer app
 
 ```bash
 cp .env.example .env.local
 ```
 
-Album search and tracklists use the public iTunes Search API. API responses are cached in SQLite at `.data/lyrical-context.sqlite` by default.
+Album search and tracklists use Spotify's Web API. Set `SPOTIFY_CLIENT_ID`
+and `SPOTIFY_CLIENT_SECRET`; `SPOTIFY_MARKET` is optional and defaults to `US`.
+API responses are cached in SQLite at `.data/lyrical-context.sqlite` by default.
 
 ## Run
 

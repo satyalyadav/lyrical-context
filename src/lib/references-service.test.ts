@@ -12,7 +12,12 @@ import { getITunesAlbumTracks } from "@/lib/itunes";
 import {
   getAlbumReferenceResponse,
   MAX_ALBUM_TRACKS,
+  search,
 } from "@/lib/references-service";
+import {
+  getSpotifyAlbumTracks,
+  searchSpotifyAlbums,
+} from "@/lib/spotify";
 import type {
   AlbumSearchResult,
   AlbumTrack,
@@ -31,6 +36,13 @@ vi.mock("@/lib/itunes", () => ({
   searchITunesAlbums: vi.fn(),
 }));
 
+vi.mock("@/lib/spotify", () => ({
+  decodeSpotifyAlbumId: (value: string) =>
+    value.startsWith("spotify:") ? value.slice("spotify:".length) : null,
+  getSpotifyAlbumTracks: vi.fn(),
+  searchSpotifyAlbums: vi.fn(),
+}));
+
 describe("references service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -44,6 +56,91 @@ describe("references service", () => {
   afterEach(() => {
     resetCacheForTests();
     delete process.env.LYRICAL_CONTEXT_DB_PATH;
+  });
+
+  it("uses Spotify for album search", async () => {
+    vi.mocked(searchSpotifyAlbums).mockResolvedValueOnce({
+      value: [albumResult({ id: "spotify:3OBhnTLrvkoEEETjFA3Qfk" })],
+      source: "live",
+    });
+
+    const results = await search("album", "history michael jackson");
+
+    expect(results[0].id).toBe("spotify:3OBhnTLrvkoEEETjFA3Qfk");
+    expect(searchSpotifyAlbums).toHaveBeenCalledWith("history michael jackson");
+  });
+
+  it("loads Spotify album tracklists for Spotify album ids", async () => {
+    vi.mocked(getSpotifyAlbumTracks).mockResolvedValueOnce({
+      value: {
+        album: albumResult({ id: "spotify:3OBhnTLrvkoEEETjFA3Qfk" }),
+        tracks: [albumTrack("spotify-track-1", "Scream", 1)],
+      },
+      source: "live",
+    });
+    vi.mocked(searchGeniusSongs).mockResolvedValue({
+      value: [songResult("song-1", "Scream")],
+      source: "live",
+    });
+    vi.mocked(getGeniusSongReferences).mockResolvedValue({
+      value: [],
+      source: "live",
+    });
+
+    const payload = await getAlbumReferenceResponse(
+      "spotify:3OBhnTLrvkoEEETjFA3Qfk"
+    );
+
+    expect(payload.album.id).toBe("spotify:3OBhnTLrvkoEEETjFA3Qfk");
+    expect(getSpotifyAlbumTracks).toHaveBeenCalledWith(
+      "3OBhnTLrvkoEEETjFA3Qfk"
+    );
+    expect(getITunesAlbumTracks).not.toHaveBeenCalled();
+  });
+
+  it("searches a clean title variant for soundtrack theme tracks", async () => {
+    vi.mocked(getSpotifyAlbumTracks).mockResolvedValueOnce({
+      value: {
+        album: albumResult({ id: "spotify:history" }),
+        tracks: [
+          albumTrack(
+            "spotify-childhood",
+            'Childhood - Theme from "Free Willy 2"',
+            30
+          ),
+        ],
+      },
+      source: "live",
+    });
+    vi.mocked(searchGeniusSongs).mockImplementation(async (query) => ({
+      value:
+        query.toLocaleLowerCase() === "test artist childhood"
+          ? [songResult("childhood", "Childhood")]
+          : [],
+      source: "live",
+    }));
+    vi.mocked(getGeniusSongReferences).mockResolvedValue({
+      value: [referenceResult("childhood-reference")],
+      source: "live",
+    });
+
+    const payload = await getAlbumReferenceResponse("spotify:history");
+
+    expect(payload.tracks[0]).toMatchObject({
+      matchStatus: "matched",
+      matchedSong: {
+        id: "childhood",
+        title: "Childhood",
+      },
+    });
+    expect(searchGeniusSongs).toHaveBeenCalledWith("Test Artist childhood", 8);
+    expect(getGeniusSongReferences).toHaveBeenCalledWith(
+      "childhood",
+      expect.objectContaining({
+        title: "Childhood",
+        artist: "Test Artist",
+      })
+    );
   });
 
   it("keeps album tracks in order and skips reference work for unmatched tracks", async () => {
@@ -612,7 +709,7 @@ describe("references service", () => {
   });
 });
 
-function albumResult(): AlbumSearchResult {
+function albumResult(overrides: Partial<AlbumSearchResult> = {}): AlbumSearchResult {
   return {
     type: "album",
     id: "album-1",
@@ -625,6 +722,7 @@ function albumResult(): AlbumSearchResult {
       trackCount: 3,
       releaseYear: "2026",
     },
+    ...overrides,
   };
 }
 

@@ -29,7 +29,9 @@ export type AlbumSearchResult = {
   artworkUrl: string | null;
   sourceUrl: string;
   metadata: {
-    collectionId: number;
+    collectionId: number | null;
+    spotifyId?: string | null;
+    provider?: "itunes" | "spotify";
     trackCount: number | null;
     releaseYear: string | null;
   };

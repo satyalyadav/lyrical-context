@@ -45,7 +45,41 @@ describe("GET /api/albums/[id]/references", () => {
     expect(getAlbumReferenceResponse).toHaveBeenCalledWith("1440824353");
   });
 
-  it("rejects nonnumeric album ids", async () => {
+  it("passes Spotify album ids to the service", async () => {
+    vi.mocked(getAlbumReferenceResponse).mockResolvedValueOnce({
+      album: {
+        type: "album",
+        id: "spotify:3OBhnTLrvkoEEETjFA3Qfk",
+        title: "Album",
+        artist: "Artist",
+        artworkUrl: null,
+        sourceUrl: "https://open.spotify.com/album/3OBhnTLrvkoEEETjFA3Qfk",
+        metadata: {
+          collectionId: null,
+          spotifyId: "3OBhnTLrvkoEEETjFA3Qfk",
+          provider: "spotify",
+          trackCount: 1,
+          releaseYear: "2024",
+        },
+      },
+      tracks: [],
+      source: "live",
+    });
+
+    const response = await GET(
+      new Request(
+        "http://app.test/api/albums/spotify:3OBhnTLrvkoEEETjFA3Qfk/references"
+      ),
+      { params: Promise.resolve({ id: "spotify:3OBhnTLrvkoEEETjFA3Qfk" }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(getAlbumReferenceResponse).toHaveBeenCalledWith(
+      "spotify:3OBhnTLrvkoEEETjFA3Qfk"
+    );
+  });
+
+  it("rejects invalid album ids", async () => {
     const response = await GET(
       new Request("http://app.test/api/albums/not-a-number/references"),
       { params: Promise.resolve({ id: "not-a-number" }) }

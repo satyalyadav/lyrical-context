@@ -5,7 +5,7 @@ import {
 } from "@/lib/api-guard";
 import { jsonWithBudgetHeaders } from "@/lib/api-response";
 import { toPublicError } from "@/lib/errors";
-import { validateNumericId } from "@/lib/request-validation";
+import { validateAlbumId } from "@/lib/request-validation";
 import { getAlbumReferenceResponse } from "@/lib/references-service";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ export async function GET(request: Request, context: AlbumReferenceContext) {
     access = await assertApiAccess(request);
 
     const { id } = await context.params;
-    const payload = await getAlbumReferenceResponse(validateNumericId(id, "Album ID"));
+    const payload = await getAlbumReferenceResponse(validateAlbumId(id));
 
     return jsonWithBudgetHeaders(payload, {
       headers: getRateLimitHeaders(access.rateLimit),
